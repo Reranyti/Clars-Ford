@@ -55,8 +55,9 @@ public final class LabProtoGameTests {
                 if (level.getBlockState(lab.at(pit[0] - 1, w, 0)).isAir()) helper.fail("no platform before the pit at " + pit[0]);
                 if (level.getBlockState(lab.at(pit[1] + 1, w, 0)).isAir()) helper.fail("no platform after the pit at " + pit[1]);
                 for (int i = pit[0]; i <= pit[1]; i++) {
-                    if (!level.getBlockState(lab.at(i, w, 0)).isAir()) helper.fail("the pit is not empty at slice " + i);
-                    if (!level.getBlockState(lab.at(i, w, -3)).is(Blocks.WATER)) helper.fail("no water at the bottom of the pit at slice " + i);
+                    if (i == pit[0] && Math.abs(w) == 4) continue;      // the ladder column: checked below
+                    if (!level.getBlockState(lab.at(i, w, 0)).isAir()) helper.fail("the pit is not empty at slice " + i + ", w=" + w);
+                    if (!level.getBlockState(lab.at(i, w, -3)).is(Blocks.WATER)) helper.fail("no water at the bottom of the pit at slice " + i + ", w=" + w);
                 }
             }
             for (int w : new int[]{-4, 4}) if (!level.getBlockState(lab.at(pit[0], w, 0)).is(Blocks.LADDER)) helper.fail("no ladder at the pit near " + pit[0]);

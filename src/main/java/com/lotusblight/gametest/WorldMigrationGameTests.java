@@ -26,10 +26,13 @@ public final class WorldMigrationGameTests {
                 WorldMigrations.step(1, "one", (s, w) -> ran.add(1)),
                 WorldMigrations.step(2, "two", (s, w) -> ran.add(2))));
 
-        // a world the mod never touched: nothing runs, nothing is recorded
+        // the test world may already carry a version from the server's own start-up migration: start from a clean record
         int before = WorldVersionData.get(level).version();
+        WorldVersionData.get(level).setVersion(0);
+
+        // a world the mod never touched: nothing runs, nothing is recorded
         if (WorldMigrations.apply(level.getServer(), level, steps, 2, false) != 0 || !ran.isEmpty()) helper.fail("a step ran in a world the mod never touched");
-        if (WorldVersionData.get(level).version() != before) helper.fail("a version was written into a world the mod never touched");
+        if (WorldVersionData.get(level).version() != 0) helper.fail("a version was written into a world the mod never touched");
 
         // a world the mod has made something in: both run, in order, once
         if (WorldMigrations.apply(level.getServer(), level, steps, 2, true) != 2 || !ran.equals(List.of(1, 2))) helper.fail("steps did not run in order: " + ran);

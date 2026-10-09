@@ -10,8 +10,14 @@ import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import org.slf4j.Logger;
 
+import net.minecraft.world.level.storage.LevelResource;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * Brings a world that was played on an older build up to date when a newer jar is put in the mods folder.
@@ -76,14 +82,14 @@ public final class WorldMigrations {
     public static void onServerStarted(ServerStartedEvent event) {
         MinecraftServer server = event.getServer();
         ServerLevel overworld = server.overworld();
-        int ran = apply(server, overworld, STEPS, CURRENT, isModWorld(overworld));
+        int ran = apply(server, overworld, STEPS, CURRENT, isModWorld(overworld), true);
         if (ran > 0) LOG.info("World migrations: {} step(s) applied, the world is now at version {}", ran, WorldVersionData.get(overworld).version());
     }
 
     /** Runs what is due now (used by the command). */
     public static int migrateNow(MinecraftServer server) {
         ServerLevel overworld = server.overworld();
-        return apply(server, overworld, STEPS, CURRENT, isModWorld(overworld));
+        return apply(server, overworld, STEPS, CURRENT, isModWorld(overworld), true);
     }
 
     /**
@@ -92,11 +98,18 @@ public final class WorldMigrations {
      * @return how many steps ran (0 for a world the mod never touched, and for one that is already up to date)
      */
     public static int apply(MinecraftServer server, ServerLevel overworld, List<Step> steps, int target, boolean modWorld) {
+        return apply(server, overworld, steps, target, modWorld, false);
+    }
+
+    /** As above; with {@code backup} the mod's own data files are copied away first when a step is due. */
+    public static int apply(MinecraftServer server, ServerLevel overworld, List<Step> steps, int target, boolean modWorld, boolean backup) {
         if (!modWorld) return 0;
         WorldVersionData data = WorldVersionData.get(overworld);
+        List<Step> due = steps.stream().filter(s -> s.version() > data.version() && s.version() <= target)
+                .sorted(Comparator.comparingInt(Step::version)).toList();
+        if (backup && !due.isEmpty()) backupModData(server, data.version());
         int ran = 0;
-        for (Step s : steps.stream().sorted(Comparator.comparingInt(Step::version)).toList()) {
-            if (s.version() <= data.version() || s.version() > target) continue;
+        for (Step s : due) {
             try {
                 s.run(server, overworld);
             } catch (RuntimeException e) {
@@ -109,6 +122,28 @@ public final class WorldMigrations {
         }
         if (data.version() < target) data.setVersion(target);          // no step of its own between: nothing to do, the number just moves up
         return ran;
+    }
+
+    /**
+     * Before the first step runs, the mod's own data files (lab, infection, versions: tiny) are copied to
+     * {@code <world>/lotusblight_backups/v<old version>_<time>/}. Only copies are made, and nothing is ever deleted there.
+     */
+    private static void backupModData(MinecraftServer server, int fromVersion) {
+        try {
+            Path root = server.getWorldPath(LevelResource.ROOT);
+            Path data = root.resolve("data");
+            if (!Files.isDirectory(data)) return;
+            Path out = root.resolve("lotusblight_backups").resolve("v" + fromVersion + "_" + System.currentTimeMillis());
+            Files.createDirectories(out);
+            try (Stream<Path> files = Files.list(data)) {
+                for (Path p : (Iterable<Path>) files.filter(f -> f.getFileName().toString().startsWith("lotusblight_") && f.toString().endsWith(".dat"))::iterator) {
+                    Files.copy(p, out.resolve(p.getFileName()));
+                }
+            }
+            LOG.info("World migrations: the mod's data was copied to {} first", out);
+        } catch (IOException | RuntimeException e) {
+            LOG.warn("World migrations: could not make the safety copy ({}), going on without it", e.toString());
+        }
     }
 
     public static String status(MinecraftServer server) {
