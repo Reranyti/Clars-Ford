@@ -150,6 +150,7 @@ async function runJob(kind, params, con, results, btn) {
   con.innerHTML = ""; if (results) results.innerHTML = "";
   try {
     const { id } = await post("/api/job", { kind, params: params || {} });
+    con.dataset.job = id;                              // so a "stop" button knows which job to stop
     let since = 0;
     for (;;) {
       const j = await api(`/api/job?id=${id}&since=${since}`);

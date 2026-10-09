@@ -91,6 +91,11 @@ minecraft {
         client {
             // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
             property 'forge.enabledGameTestNamespaces', mod_id
+            // ./gradlew runClient -Photswap : opens a debug port on THIS computer only, so tools/HotSwap.java (Lotos Studio's
+            // "apply changes") can swap changed classes into the running game. Off unless asked for.
+            if (project.hasProperty('hotswap')) {
+                jvmArg '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:5005'
+            }
         }
 
         server {

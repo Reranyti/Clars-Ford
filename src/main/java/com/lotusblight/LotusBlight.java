@@ -174,6 +174,7 @@ public class LotusBlight {
             MinecraftForge.EVENT_BUS.register(com.lotusblight.escape.LotusChaseStructure.class);
             MinecraftForge.EVENT_BUS.register(new com.lotusblight.escape.StarFallEvent());
             MinecraftForge.EVENT_BUS.register(new com.lotusblight.escape.LabProto());
+            MinecraftForge.EVENT_BUS.register(com.lotusblight.world.WorldMigrations.class);
             MinecraftForge.EVENT_BUS.register(new com.lotusblight.worldgen.WorldBorderSetup());
             MinecraftForge.EVENT_BUS.register(new com.lotusblight.worldgen.QuarantineBarrier());
         }

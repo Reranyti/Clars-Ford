@@ -35,6 +35,8 @@ for _d in ("episodes", "history", "refs", "checks", "docs", "backups"):
 
 ID_RE = re.compile(r"^[a-z0-9_-]{1,40}$")
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+# hot swap: "since" = when the running game was started (classes compiled earlier are what it has), "watch" = auto-apply on
+HOT: dict = {"since": 0, "watch": False, "applied_mtime": 0.0, "thread": None}
 
 
 # ------------------------------------------------------------------ config
@@ -83,6 +85,8 @@ def load_config() -> dict:
             pass
     if not cfg["java_home"]:
         cfg["java_home"] = find_java(Path(cfg["gradle_home"]))
+    if os.environ.get("LOTOS_STUDIO_PORT"):                 # a second copy for testing, next to the one in use
+        cfg["port"] = int(os.environ["LOTOS_STUDIO_PORT"])
     return cfg
 
 
@@ -241,6 +245,7 @@ class Job:
         self.images: list[dict] = []
         self.started = time.time()
         self.lock = threading.Lock()
+        self.proc = None            # the process this job started (so it can be stopped)
 
     def log(self, s: str):
         with self.lock:
@@ -258,14 +263,15 @@ class Job:
 JOBS: dict[str, Job] = {}
 
 
-def run_cmd(job: Job, args: list[str], cwd: str | None = None) -> int:
+def run_cmd(job: Job, args: list[str], cwd: str | None = None, env: dict | None = None) -> int:
     job.log("$ " + " ".join(f'"{a}"' if " " in a else a for a in args))
     try:
-        p = subprocess.Popen(args, cwd=cwd, env=build_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        p = subprocess.Popen(args, cwd=cwd, env=env or build_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              creationflags=NO_WINDOW)
     except Exception as e:  # noqa: BLE001
         job.log(f"Не удалось запустить: {e}")
         return 127
+    job.proc = p
     assert p.stdout is not None
     for raw in iter(p.stdout.readline, b""):
         line = raw.decode("utf-8", errors="replace").rstrip()
@@ -546,6 +552,91 @@ def job_build_game(job: Job, p: dict) -> bool:
     return job_build(job, p) and job_game_install(job, p)
 
 
+def job_game_run(job: Job, p: dict) -> bool:
+    """Starts Minecraft with the mod straight from the sources (ForgeGradle runClient): its own folder `run`, its own worlds,
+    no launcher and no account. The job stays open while the game runs and shows its console; it can be stopped from the page."""
+    proj = Path(CFG["project"])
+    gw = proj / "gradlew.bat"
+    if not gw.exists() or not (proj / "run").exists() or not CFG["java_home"]:
+        job.log("Не хватает gradlew.bat, папки run или Java: см. «Состояние».")
+        return False
+    env = build_env()
+    env["JAVA_TOOL_OPTIONS"] = env.get("JAVA_TOOL_OPTIONS", "") + " -Xmx3G"
+    cmd = ["cmd", "/c", str(gw), "runClient", "--no-daemon"]
+    if p.get("hotswap"):
+        cmd.append("-Photswap")                              # debug port on this computer only: lets "apply changes" swap code in live
+        HOT["since"] = int(time.time() * 1000)              # classes compiled before this moment are what the game starts with
+    if p.get("dry"):
+        job.log("Проверка без запуска: всё готово.")
+        job.log("Команда: " + " ".join(cmd))
+        job.log(f"Папка игры: {proj / 'run'} (отдельные миры)")
+        job.log("Память для игры: до 3 ГБ. Свободно сейчас: %.1f ГБ из %.1f." % (memory_gb()[1], memory_gb()[0]))
+        return True
+    job.log("Запускаю игру из исходников. Первый запуск долгий, окно Minecraft откроется само. Миры лежат в папке run, настоящие не затронуты.")
+    rc = run_cmd(job, cmd, cwd=str(proj), env=env)
+    job.log(f"Игра закрыта (код {rc}).")
+    return rc == 0
+
+
+def job_hot_apply(job: Job, p: dict) -> bool:
+    """Compiles what changed and swaps the changed classes into the RUNNING game (tools/HotSwap.java). Method bodies only:
+    a new field or method in an already loaded class needs a restart, and the tool says which."""
+    proj = Path(CFG["project"])
+    gw = str(proj / "gradlew.bat")
+    rc = run_cmd(job, ["cmd", "/c", gw, "compileJava", "processResources", "-q", "-Dorg.gradle.daemon.idletimeout=120000"], cwd=str(proj))
+    if rc != 0:
+        job.log("Сборка не прошла: исправь ошибки выше. Подмена не делалась.")
+        return False
+    classes = proj / "build" / "classes" / "java" / "main"
+    rc = run_cmd(job, [java_exe(), str(proj / "tools" / "HotSwap.java"), str(classes), str(DATA / "hotswap_state.txt"), str(HOT["since"]), "5005"])
+    job.log("Ресурсы (текстуры, модели, тексты) обновлены на диске: в игре нажми F3+T. Данные (рецепты и т. п.): /reload.")
+    return rc == 0
+
+
+def newest_source_mtime() -> float:
+    newest = 0.0
+    for root in (Path(CFG["project"]) / "src" / "main",):
+        for dirpath, _dirs, files in os.walk(root):
+            for f in files:
+                try:
+                    newest = max(newest, os.stat(os.path.join(dirpath, f)).st_mtime)
+                except OSError:
+                    pass
+    return newest
+
+
+def watch_loop() -> None:
+    HOT["applied_mtime"] = newest_source_mtime()
+    while HOT["watch"]:
+        time.sleep(3)
+        try:
+            newest = newest_source_mtime()
+            busy = any(j.status == "running" and j.kind == "hot_apply" for j in JOBS.values())
+            if newest > HOT["applied_mtime"] and not busy:
+                time.sleep(1.5)                                  # let a save in progress finish
+                HOT["applied_mtime"] = newest_source_mtime()
+                start_job("hot_apply", {})
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def set_watch(on: bool) -> dict:
+    HOT["watch"] = bool(on)
+    if on and not (HOT["thread"] and HOT["thread"].is_alive()):
+        HOT["thread"] = threading.Thread(target=watch_loop, daemon=True)
+        HOT["thread"].start()
+    return {"on": HOT["watch"]}
+
+
+def stop_job(jid: str) -> dict:
+    job = JOBS.get(jid)
+    if not job or not job.proc or job.proc.poll() is not None:
+        return {"ok": False, "why": "нет запущенного процесса"}
+    subprocess.run(["taskkill", "/T", "/F", "/PID", str(job.proc.pid)], capture_output=True, creationflags=NO_WINDOW)   # only what this job started
+    job.log("Остановлено по твоей кнопке.")
+    return {"ok": True}
+
+
 def job_backup(job: Job, p: dict) -> bool:
     import zipfile
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -564,6 +655,8 @@ def job_backup(job: Job, p: dict) -> bool:
 
 
 JOB_KINDS = {
+    "hot_apply": ("Применить изменения в запущенной игре", job_hot_apply),
+    "game_run": ("Запуск игры с модом (тест)", job_game_run),
     "game_install": ("Мод в тестовую игру", job_game_install),
     "build_game": ("Сборка и мод в тестовую игру", job_build_game),
     "sandbox_create": ("Песочница: создать", job_sandbox_create),
@@ -1151,6 +1244,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(list_mods())
             if path == "/api/envs":
                 return self.send_json(envs_status())
+            if path == "/api/watch":
+                return self.send_json({"on": HOT["watch"]})
             if path == "/api/shader_options":
                 return self.send_json(read_shader_options())
             if path.startswith("/refs/"):
@@ -1199,6 +1294,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(save_doc(q["name"], req.get("data"), req.get("md")))
             if path == "/api/open":
                 return self.send_json(open_folder(json.loads(self.body().decode("utf-8")).get("key", "")))
+            if path == "/api/watch":
+                return self.send_json(set_watch(bool(json.loads(self.body().decode("utf-8")).get("on"))))
+            if path == "/api/job_stop":
+                return self.send_json(stop_job(json.loads(self.body().decode("utf-8")).get("id", "")))
             if path == "/api/sandbox_win":
                 return self.send_json(launch_windows_sandbox(json.loads(self.body().decode("utf-8"))))
             if path == "/api/shader_options":

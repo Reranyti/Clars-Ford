@@ -473,7 +473,17 @@ public final class LotusCommands {
 
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> worldCommands() {
         return Commands.literal("world")
-                .then(Commands.literal("status").executes(ctx -> worldStatus(ctx.getSource())));
+                .then(Commands.literal("status").executes(ctx -> worldStatus(ctx.getSource())))
+                .then(Commands.literal("version").executes(ctx -> {
+                    String report = com.lotusblight.world.WorldMigrations.status(ctx.getSource().getServer());
+                    ctx.getSource().sendSuccess(() -> Component.literal(report), false);
+                    return 1;
+                }))
+                .then(Commands.literal("migrate").executes(ctx -> {
+                    int ran = com.lotusblight.world.WorldMigrations.migrateNow(ctx.getSource().getServer());
+                    ctx.getSource().sendSuccess(() -> Component.literal(ran == 0 ? "Мир уже на актуальной версии (или мод в нём ещё ничего не создал)." : "Применено шагов: " + ran), true);
+                    return 1;
+                }));
     }
 
     private static int worldStatus(CommandSourceStack source) {

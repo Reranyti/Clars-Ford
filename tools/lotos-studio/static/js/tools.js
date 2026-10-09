@@ -20,11 +20,22 @@ registerPage("panel", {
     pushBtn.onclick = async () => { if (await confirmBox("Репозиторий ПУБЛИЧНЫЙ: все записанные коммиты станут видны всем. Отправить?", "Отправить")) runJob("git_push", {}, con, null, pushBtn); };
     const folders = [["project", "Проект"], ["mods", "mods"], ["screenshots", "Скриншоты"], ["logs", "Логи игры"], ["shaderpacks", "Шейдер-паки"], ["art", "art"], ["episodes", "Заметки (art/episodes)"], ["studio", "Данные Studio"]];
     const modsBox = h("div", {}, h("span", { class: "muted" }, "Загрузка…")), actBox = h("div", {});
+    const gameStart = h("button", { class: "btn primary" }, "Запустить игру с модом");
+    gameStart.onclick = async () => { if (await confirmBox("Запустить Minecraft из исходников? Окно игры откроется на твоём ПК, нужно около 3 ГБ памяти. Миры отдельные (папка run). Включается горячая замена (порт отладки только на этом компьютере).", "Запустить")) runJob("game_run", { hotswap: true }, con, null, gameStart); };
+    const hotBtn = jobBtn("Применить изменения в игре", "hot_apply", {}, con, null, "btn good");
+    const autoChk = h("input", { type: "checkbox", onchange: async () => { const r = await post("/api/watch", { on: autoChk.checked }); toast(r.on ? "Авто-применение включено: сохрани файл, и изменения подхватятся" : "Авто-применение выключено"); } });
+    api("/api/watch").then(r => { autoChk.checked = r.on; }).catch(() => {});
+    const gameStop = h("button", { class: "btn danger" }, "Остановить игру");
+    gameStop.onclick = async () => { const id = con.dataset.job; if (!id) { toast("Игра не запущена из Studio"); return; } const r = await post("/api/job_stop", { id }); toast(r.ok ? "Останавливаю…" : "Нечего останавливать"); };
     // the REAL game is touched only on purpose, after a confirmation
     const realBtn = (label, kind) => { const b = h("button", { class: "btn" }, label); b.onclick = async () => { if (await confirmBox("Это твоя НАСТОЯЩАЯ игра (папка mods). Закрой Minecraft. Продолжить?", "Да, в настоящую")) runJob(kind, {}, con, null, b); }; return b; };
     root.append(
       h("div", { class: "grid g2" },
-        h("div", {}, h("div", { class: "card" }, h("h2", {}, "Сборка мода"),
+        h("div", {}, h("div", { class: "card" }, h("h2", {}, "Игра с модом (тест)"),
+          h("div", { class: "toolbar" }, gameStart, jobBtn("Проверить без запуска", "game_run", { dry: true }, con, null, "btn"), gameStop),
+          h("div", { class: "toolbar" }, hotBtn, h("label", { class: "row tight" }, autoChk, "авто-применение при сохранении файлов")),
+          h("div", { class: "muted small" }, "Запускает Minecraft прямо из исходников: без лаунчера и аккаунта, свои миры в папке run. Нужно около 3 ГБ памяти. «Применить изменения» компилирует правки и подменяет код в работающей игре без перезапуска (тела методов); новое поле или метод в загруженном классе требуют перезапуска, программа скажет какие. Текстуры и тексты: F3+T в игре.")),
+          h("div", { class: "card" }, h("h2", {}, "Сборка мода"),
           h("div", { class: "toolbar" }, jobBtn("Собрать и поставить в тестовую игру", "build_game", {}, con, null, "btn primary"), jobBtn("Только поставить в тестовую игру", "game_install", {}, con, null), jobBtn("Только собрать", "build", {}, con, null)),
           h("div", { class: "muted small" }, "Тестовая игра: отдельная папка D:\\mc-sandbox со своими модами и мирами. Сборка идёт минуты."),
           h("h3", {}, "В настоящую игру (осторожно)"), h("div", { class: "toolbar" }, realBtn("Положить jar в настоящие mods", "copy_jar"), realBtn("Собрать и положить в настоящие mods", "build_copy")),
