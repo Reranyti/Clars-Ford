@@ -428,6 +428,11 @@ public final class LotusCommands {
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> labProtoCommands() {
         return Commands.literal("labproto")
                 .then(Commands.literal("build").executes(ctx -> labProto(ctx.getSource(), "build")))
+                .then(Commands.literal("bigbuild")
+                        .executes(ctx -> labProtoBig(ctx.getSource(), 20261010L))
+                        .then(Commands.argument("seed", com.mojang.brigadier.arguments.LongArgumentType.longArg())
+                                .executes(ctx -> labProtoBig(ctx.getSource(), com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "seed")))))
+                .then(Commands.literal("map").executes(ctx -> labProto(ctx.getSource(), "map")))
                 .then(Commands.literal("start").executes(ctx -> labProto(ctx.getSource(), "start")))
                 .then(Commands.literal("stop").executes(ctx -> labProto(ctx.getSource(), "stop")))
                 .then(Commands.literal("status").executes(ctx -> labProto(ctx.getSource(), "status")));
@@ -443,8 +448,21 @@ public final class LotusCommands {
             case "build" -> proto.build(source.getPlayerOrException());
             case "start" -> proto.start(source.getPlayerOrException());
             case "stop" -> proto.stop();
+            case "map" -> proto.map();
             default -> proto.status();
         };
+        source.sendSuccess(() -> Component.literal(result), false);
+        return 1;
+    }
+
+    private static int labProtoBig(CommandSourceStack source, long seed) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        com.lotusblight.escape.LabProto proto = com.lotusblight.escape.LabProto.get();
+        if (proto == null) {
+            source.sendFailure(Component.literal("Прототип не подключён (только на сервере мира)."));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Строю большую лабораторию (несколько секунд, мир может ненадолго замереть)…"), false);
+        String result = proto.buildBig(source.getPlayerOrException(), seed);
         source.sendSuccess(() -> Component.literal(result), false);
         return 1;
     }

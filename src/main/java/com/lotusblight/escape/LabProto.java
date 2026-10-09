@@ -68,10 +68,21 @@ public final class LabProto {
         instance = this;
     }
 
+    /** What a run needs from whatever is built: the world, which way it faces, where the runner starts and where the way out is. */
+    public interface Course {
+        ServerLevel level();
+
+        Direction dir();
+
+        Vec3 startPos();
+
+        AABB exitBox();
+    }
+
     // ================================================================== the layout (also used by the game tests)
 
     /** The built geometry: where everything is, how to build it, and a rail walker for checking the cart's way. */
-    public static final class Layout {
+    public static final class Layout implements Course {
         public static final int ROOM_END = 11, CORRIDOR_START = 12, CORRIDOR_END = 41, TUNNEL_START = 42, TUNNEL_END = 49;
         public static final int PARKOUR_START = 50, PARKOUR_END = 67, STATION_START = 68, STATION_END = 112;
         public static final int CART_I = 70, MAIN_END = 84, FORK_I = 85, LEFT_END = 108, RIGHT_END = 100;
@@ -98,6 +109,16 @@ public final class LabProto {
 
         public BlockPos at(int i, int w, int h) {
             return origin.relative(dir, i).relative(right, w).above(h);
+        }
+
+        @Override
+        public ServerLevel level() {
+            return level;
+        }
+
+        @Override
+        public Direction dir() {
+            return dir;
         }
 
         public BlockPos forkPos() {
@@ -377,7 +398,8 @@ public final class LabProto {
 
     // ================================================================== the run (chaser, cart, fork)
 
-    private Layout layout;
+    private Layout layout;               // the straight test line with the cart, or null
+    private Course course;               // whatever is built right now (the line, or the big facility)
     private UUID cartId;
     private long kickAtTick = -1;
     private UUID runner;
@@ -395,34 +417,54 @@ public final class LabProto {
         BlockPos floor = player.blockPosition().below().relative(player.getDirection(), 3);
         layout = new Layout(level, floor, player.getDirection());
         layout.build();
+        course = layout;
         Layout l = layout;
         return String.format("Прототип построен: вход у %s, направление %s, длина около %d блоков. Дальше: /lotus labproto start.",
                 l.at(0, 0, 1).toShortString(), l.dir, Layout.STATION_END);
     }
 
-    public String start(ServerPlayer player) {
-        if (layout == null) return "Сначала /lotus labproto build.";
+    /** Builds the big facility (see {@link LabFacility}) and makes it the course; returns the report with a map. */
+    public String buildBig(ServerPlayer player, long seed) {
+        if (!(player.level() instanceof ServerLevel level)) return "Только в мире.";
         stopRun(false);
-        ServerLevel level = layout.level;
-        // the cart waits at the station
-        Entity old = cartId == null ? null : level.getEntity(cartId);
-        if (old != null) old.discard();
-        BlockPos c = layout.cartPos();
-        Minecart cart = new Minecart(level, c.getX() + 0.5, c.getY() + 0.0625, c.getZ() + 0.5);
-        level.addFreshEntity(cart);
-        cartId = cart.getUUID();
-        layout.setFork(false);
-        Vec3 s = layout.startPos();
-        player.teleportTo(level, s.x, s.y, s.z, layout.dir.toYRot(), 0f);
+        BlockPos floor = player.blockPosition().below().relative(player.getDirection(), 3);
+        long t0 = System.currentTimeMillis();
+        LabFacility fac = new LabFacility(level, floor, player.getDirection(), seed);
+        fac.build();
+        layout = null;                                                   // the cart belongs to the straight line only
+        course = fac;
+        return String.format("Лаборатория построена за %.1f с: вход у %s, комнат %d, коридоров %d, размер %dx%d. Дальше: /lotus labproto start.%n%s",
+                (System.currentTimeMillis() - t0) / 1000.0, fac.at(0, 0, 1).toShortString(), fac.roomCount(), fac.connectorCount(), fac.sizeI(), fac.sizeW(), fac.asciiMap());
+    }
+
+    public String start(ServerPlayer player) {
+        if (course == null) return "Сначала /lotus labproto build (линия) или bigbuild (лаборатория).";
+        stopRun(false);
+        ServerLevel level = course.level();
+        if (layout != null) {                                              // the straight line has a cart at its station
+            Entity old = cartId == null ? null : level.getEntity(cartId);
+            if (old != null) old.discard();
+            BlockPos c = layout.cartPos();
+            Minecart cart = new Minecart(level, c.getX() + 0.5, c.getY() + 0.0625, c.getZ() + 0.5);
+            level.addFreshEntity(cart);
+            cartId = cart.getUUID();
+            layout.setFork(false);
+        }
+        Vec3 s = course.startPos();
+        player.teleportTo(level, s.x, s.y, s.z, course.dir().toYRot(), 0f);
         runner = player.getUUID();
         runStart = level.getGameTime();
         trail.clear();
         trail.addLast(s);
         lastTrail = s;
-        Vec3 back = new Vec3(layout.dir.getStepX(), 0, layout.dir.getStepZ());
+        Vec3 back = new Vec3(course.dir().getStepX(), 0, course.dir().getStepZ());
         chaser = s.subtract(back.scale(12));                  // it comes in through the doorway behind the runner
         player.displayClientMessage(Component.literal("— Оно уже идёт за тобой. Беги вперёд."), false);
-        return "Побег начат. Конец: левая ветка станции (жёлтый свет). Остановить: /lotus labproto stop.";
+        return "Побег начат. Ищи жёлтый свет и выход (светлый зал с зелёным полом). Остановить: /lotus labproto stop.";
+    }
+
+    public String map() {
+        return course instanceof LabFacility fac ? fac.asciiMap() : "Карта есть только у большой лаборатории (bigbuild).";
     }
 
     public String stop() {
@@ -432,8 +474,8 @@ public final class LabProto {
     }
 
     public String status() {
-        if (layout == null) return "Прототип не построен.";
-        return "построен у " + layout.at(0, 0, 1).toShortString() + ", " + layout.dir + ", бег: " + (runner != null);
+        if (course == null) return "Ничего не построено.";
+        return (course instanceof LabFacility ? "большая лаборатория" : "прямая линия") + ", " + course.dir() + ", бег: " + (runner != null);
     }
 
     private void stopRun(boolean message) {
@@ -452,11 +494,11 @@ public final class LabProto {
 
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || layout == null) return;
+        if (event.phase != TickEvent.Phase.END || course == null) return;
         MinecraftServer server = event.getServer();
-        ServerLevel level = layout.level;
+        ServerLevel level = course.level();
         long now = level.getGameTime();
-        Entity cartEntity = cartId == null ? null : level.getEntity(cartId);
+        Entity cartEntity = layout == null || cartId == null ? null : level.getEntity(cartId);
         if (cartEntity instanceof Minecart cart) tickCart(cart, now);
         if (runner != null) tickRun(server, level, now);
     }
@@ -492,7 +534,7 @@ public final class LabProto {
             return;
         }
         Vec3 pos = player.position();
-        if (layout.exitBox().contains(pos)) {
+        if (course.exitBox().contains(pos)) {
             player.displayClientMessage(Component.literal(String.format("— Выход найден за %.1f с. Прототип пройден.", (now - runStart) / 20.0)), false);
             stopRun(false);
             return;
@@ -518,8 +560,8 @@ public final class LabProto {
         }
         double dist = chaser.distanceTo(pos);
         if (dist < CATCH_DISTANCE) {
-            Vec3 s = layout.startPos();
-            player.teleportTo(level, s.x, s.y, s.z, layout.dir.toYRot(), 0f);
+            Vec3 s = course.startPos();
+            player.teleportTo(level, s.x, s.y, s.z, course.dir().toYRot(), 0f);
             player.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, 40, 0, false, false));
             player.displayClientMessage(Component.literal("— Оно достало тебя. (В прототипе это без смерти: назад в начало.)"), false);
             stopRun(false);
