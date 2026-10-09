@@ -20,10 +20,15 @@ registerPage("panel", {
     pushBtn.onclick = async () => { if (await confirmBox("Репозиторий ПУБЛИЧНЫЙ: все записанные коммиты станут видны всем. Отправить?", "Отправить")) runJob("git_push", {}, con, null, pushBtn); };
     const folders = [["project", "Проект"], ["mods", "mods"], ["screenshots", "Скриншоты"], ["logs", "Логи игры"], ["shaderpacks", "Шейдер-паки"], ["art", "art"], ["episodes", "Заметки (art/episodes)"], ["studio", "Данные Studio"]];
     const modsBox = h("div", {}, h("span", { class: "muted" }, "Загрузка…")), actBox = h("div", {});
+    // the REAL game is touched only on purpose, after a confirmation
+    const realBtn = (label, kind) => { const b = h("button", { class: "btn" }, label); b.onclick = async () => { if (await confirmBox("Это твоя НАСТОЯЩАЯ игра (папка mods). Закрой Minecraft. Продолжить?", "Да, в настоящую")) runJob(kind, {}, con, null, b); }; return b; };
     root.append(
       h("div", { class: "grid g2" },
-        h("div", {}, h("div", { class: "card" }, h("h2", {}, "Сборка мода"), h("div", { class: "toolbar" }, jobBtn("Собрать", "build", {}, con, null, "btn primary"), jobBtn("Положить jar в mods", "copy_jar", {}, con, null), jobBtn("Собрать и положить", "build_copy", {}, con, null)),
-          h("div", { class: "muted small" }, "Сборка идёт минуты. Закрой Minecraft перед копированием: он держит jar.")),
+        h("div", {}, h("div", { class: "card" }, h("h2", {}, "Сборка мода"),
+          h("div", { class: "toolbar" }, jobBtn("Собрать и поставить в тестовую игру", "build_game", {}, con, null, "btn primary"), jobBtn("Только поставить в тестовую игру", "game_install", {}, con, null), jobBtn("Только собрать", "build", {}, con, null)),
+          h("div", { class: "muted small" }, "Тестовая игра: отдельная папка D:\\mc-sandbox со своими модами и мирами. Сборка идёт минуты."),
+          h("h3", {}, "В настоящую игру (осторожно)"), h("div", { class: "toolbar" }, realBtn("Положить jar в настоящие mods", "copy_jar"), realBtn("Собрать и положить в настоящие mods", "build_copy")),
+          h("div", { class: "muted small" }, "Один раз в лаунчере: Установки → Новая → Forge 1.20.1 → «Папка игры» D:\\mc-sandbox. Играй этим профилем для проверок: миры и удаление мира не заденут настоящие.")),
           h("div", { class: "card" }, h("h2", {}, "Git"), h("div", { class: "toolbar" }, jobBtn("Что изменилось", "git_status", {}, con, null), pushBtn), msg,
             h("div", { class: "row", style: "margin:8px 0" }, h("span", { class: "muted" }, "Добавить:"), scopes.map(sc => h("label", { class: "row tight" }, h("input", { type: "checkbox", checked: true, onchange: e => { if (e.target.checked) chosen.add(sc); else chosen.delete(sc); } }), sc)), h("label", { class: "row tight", style: "margin-left:10px" }, push, "сразу отправить")), commit,
             h("div", { class: "muted small", style: "margin-top:8px" }, "Заметки о сюжете (art/episodes) в git не попадают: они в .gitignore.")),

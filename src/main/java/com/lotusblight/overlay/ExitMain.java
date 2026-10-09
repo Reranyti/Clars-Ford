@@ -112,7 +112,8 @@ public final class ExitMain {
             List<File> ours = new ArrayList<>();
             for (String path : new String[]{song1, song2, song3, contact, interlude}) if (path != null) ours.add(new File(path));
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                for (File f : ours) f.delete();
+                // The paths arrived as arguments: only a known track in our own temp folder is ever removed.
+                for (File f : ours) com.lotusblight.safety.SafeFiles.deleteOwn(f.toPath());
             }));
         }
         ExitScene.Stage start = from == null ? null : ExitScene.Stage.valueOf(from.toUpperCase(Locale.ROOT));

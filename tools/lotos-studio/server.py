@@ -500,6 +500,52 @@ def job_sandbox_build(job: Job, p: dict) -> bool:
     return rc == 0 and jar.exists()
 
 
+def test_game_dir() -> Path:
+    return Path(CFG.get("test_game", "D:/mc-sandbox"))
+
+
+def job_game_install(job: Job, p: dict) -> bool:
+    """Puts the built mod into the separate TEST copy of the game (its own mods, saves and config), never the real one.
+    Dependency jars are copied from the real mods folder once; our own jars are always replaced by the fresh build."""
+    proj, mc, game = Path(CFG["project"]), Path(CFG["minecraft"]), test_game_dir()
+    if game.resolve() == mc.resolve():
+        job.log("Тестовая папка совпадает с настоящей: так нельзя.")
+        return False
+    jar = proj / "build" / "libs" / CFG["jar_name"]
+    if not jar.exists():
+        job.log("Сначала собери мод: файла нет в build/libs.")
+        return False
+    mods = game / "mods"
+    mods.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for src in sorted((mc / "mods").glob("*.jar")):
+        if src.name.lower().startswith("lotusblight-"):
+            continue                                         # our main jar comes from the fresh build below
+        dst = mods / src.name
+        if not dst.exists() or dst.stat().st_size != src.stat().st_size:
+            shutil.copy2(src, dst)
+            copied += 1
+    for old in mods.glob("lotusblight-*.jar"):
+        if old.name != jar.name:
+            old.unlink()                                     # an older build of our own jar
+    try:
+        shutil.copy2(jar, mods / jar.name)
+    except PermissionError:
+        job.log("Файл занят: закрой тестовую игру и повтори.")
+        return False
+    pack = proj / "shaderpack" / "LotosCinema"
+    if pack.exists():
+        shutil.copytree(pack, game / "shaderpacks" / "LotosCinema", dirs_exist_ok=True)
+    job.log(f"Тестовая игра: {game}")
+    job.log(f"Моды: добавлено {copied} зависимостей, мод {jar.name} ({jar.stat().st_size / 2**20:.1f} МБ) обновлён. Шейдер-пак на месте.")
+    job.log("Настоящая папка mods не тронута.")
+    return True
+
+
+def job_build_game(job: Job, p: dict) -> bool:
+    return job_build(job, p) and job_game_install(job, p)
+
+
 def job_backup(job: Job, p: dict) -> bool:
     import zipfile
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -518,6 +564,8 @@ def job_backup(job: Job, p: dict) -> bool:
 
 
 JOB_KINDS = {
+    "game_install": ("Мод в тестовую игру", job_game_install),
+    "build_game": ("Сборка и мод в тестовую игру", job_build_game),
     "sandbox_create": ("Песочница: создать", job_sandbox_create),
     "sandbox_status": ("Песочница: что изменилось", job_sandbox_status),
     "sandbox_apply": ("Песочница: применить в проект", job_sandbox_apply),

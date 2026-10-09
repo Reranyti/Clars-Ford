@@ -166,7 +166,14 @@ public final class GameMain {
             Runtime.getRuntime().addShutdownHook(new Thread(() -> shellCall("UndoMinimizeALL()")));
             Thread.sleep(900);
         }
-        if (recordFile != null) java.nio.file.Files.deleteIfExists(recordFile.toPath());
+        if (recordFile != null) {
+            // A developer test option: it may only touch a .txt file inside a "song-test" folder, never an arbitrary path.
+            if (!com.lotusblight.safety.SafeFiles.isTestRecordFile(recordFile.toPath())) {
+                System.err.println("--record refused: " + recordFile + " is not a test file");
+                System.exit(2);
+            }
+            java.nio.file.Files.deleteIfExists(recordFile.toPath());
+        }
         if (GraphicsEnvironment.isHeadless()) { System.err.println("No screen."); System.exit(2); }
         // Pictures are read straight from memory - no temporary cache files on disk.
         javax.imageio.ImageIO.setUseCache(false);
@@ -779,10 +786,11 @@ public final class GameMain {
                 data = java.nio.file.Files.readAllBytes(new File(file).toPath());
                 if (deleteVideo) {                                   // it is all in memory now: the file need not stay on the disk a moment longer
                     try {
-                        java.nio.file.Files.deleteIfExists(new File(file).toPath());
-                        File dir = new File(file).getParentFile();
-                        String[] left = dir == null ? null : dir.list();
-                        if (left != null && left.length == 0 && dir.getName().equals(".lotusblight-cache")) java.nio.file.Files.deleteIfExists(dir.toPath());
+                        // Only our own video, in our own cache folder: the path came in as an argument, so it is checked, not trusted.
+                        java.nio.file.Path video = new File(file).toPath();
+                        com.lotusblight.safety.SafeFiles.deleteOwn(video);
+                        java.nio.file.Path dir = video.toAbsolutePath().getParent();
+                        if (dir != null) com.lotusblight.safety.SafeFiles.deleteEmptyCacheDir(dir);
                     } catch (Exception ignored) {
                     }
                 }
