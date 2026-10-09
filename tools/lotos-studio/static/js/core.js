@@ -167,13 +167,27 @@ const PAGES = {};         // key -> { title, icon, group, order, render(root) }
 const S = { page: "dashboard", leave: [], badges: {} };
 const onLeave = fn => S.leave.push(fn);
 function registerPage(key, def) { PAGES[key] = def; }
+const CORE_PAGES = ["dashboard", "episode", "claude", "shader"];       // what the simple mode shows
+function navLink(key, p) {
+  return h("a", { class: S.page === key ? "on" : "", href: "#" + key, onclick: () => $("#side").classList.remove("open") }, icon(p.icon), p.title, S.badges[key] ? h("span", { class: "bd" }, S.badges[key]) : null);
+}
 function renderNav() {
   const nav = $("#nav"); nav.innerHTML = "";
-  for (const group of ["Работа", "Инструменты"]) {
-    nav.append(h("div", { class: "grp" }, group));
-    for (const [key, p] of Object.entries(PAGES).filter(([, p]) => p.group === group).sort((a, b) => a[1].order - b[1].order))
-      nav.append(h("a", { class: S.page === key ? "on" : "", href: "#" + key, onclick: () => $("#side").classList.remove("open") }, icon(p.icon), p.title, S.badges[key] ? h("span", { class: "bd" }, S.badges[key]) : null));
+  const simple = store("ls_simple") !== "0";
+  const rest = group => Object.entries(PAGES).filter(([k, p]) => p.group === group && (!simple || !CORE_PAGES.includes(k))).sort((a, b) => a[1].order - b[1].order);
+  if (simple) {
+    nav.append(h("div", { class: "grp" }, "Главное"));
+    for (const k of CORE_PAGES) if (PAGES[k]) nav.append(navLink(k, PAGES[k]));
+    const open = S.more || !CORE_PAGES.includes(S.page);
+    nav.append(h("a", { onclick: () => { S.more = !open; renderNav(); } }, icon("grid"), open ? "Скрыть остальное" : "Ещё разделы"));
+    if (open) for (const group of ["Работа", "Инструменты"]) { const items = rest(group); if (!items.length) continue; nav.append(h("div", { class: "grp" }, group)); for (const [k, p] of items) nav.append(navLink(k, p)); }
+  } else {
+    for (const group of ["Работа", "Инструменты"]) { nav.append(h("div", { class: "grp" }, group)); for (const [k, p] of rest(group)) nav.append(navLink(k, p)); }
   }
+  let mb = $("#modebtn");
+  if (!mb) { mb = h("button", { class: "kbd-hint", id: "modebtn", style: "margin-top:8px" }); $(".side-foot").append(mb); }
+  mb.textContent = simple ? "Простой режим: включён" : "Простой режим: выключен";
+  mb.onclick = () => { store("ls_simple", simple ? "0" : "1"); S.more = false; renderNav(); };
 }
 async function renderPage() {
   for (const fn of S.leave.splice(0)) { try { await fn(); } catch (e) { /* ignore */ } }
