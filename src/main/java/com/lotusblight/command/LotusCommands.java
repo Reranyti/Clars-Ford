@@ -55,6 +55,7 @@ public final class LotusCommands {
                         .then(Commands.argument("passes", IntegerArgumentType.integer(1, 500))
                                 .executes(ctx -> timewarp(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "passes")))))
                 .then(chaseCommands())
+                .then(labProtoCommands())
                 .then(starFallCommands())
                 .then(worldCommands())
                 .then(meteoriteCommands())
@@ -419,6 +420,32 @@ public final class LotusCommands {
         }
         source.getPlayerOrException().teleportTo(entrance.getX() - 6 + 0.5, entrance.getY() + 1, entrance.getZ() + 0.5);
         source.sendSuccess(() -> Component.literal("Телепортирован ко входу в лабораторию: " + entrance.toShortString()), true);
+        return 1;
+    }
+
+    // ---- /lotus labproto ... (prototype of the redesigned escape lab, see escape/LabProto) -------
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> labProtoCommands() {
+        return Commands.literal("labproto")
+                .then(Commands.literal("build").executes(ctx -> labProto(ctx.getSource(), "build")))
+                .then(Commands.literal("start").executes(ctx -> labProto(ctx.getSource(), "start")))
+                .then(Commands.literal("stop").executes(ctx -> labProto(ctx.getSource(), "stop")))
+                .then(Commands.literal("status").executes(ctx -> labProto(ctx.getSource(), "status")));
+    }
+
+    private static int labProto(CommandSourceStack source, String action) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        com.lotusblight.escape.LabProto proto = com.lotusblight.escape.LabProto.get();
+        if (proto == null) {
+            source.sendFailure(Component.literal("Прототип не подключён (только на сервере мира)."));
+            return 0;
+        }
+        String result = switch (action) {
+            case "build" -> proto.build(source.getPlayerOrException());
+            case "start" -> proto.start(source.getPlayerOrException());
+            case "stop" -> proto.stop();
+            default -> proto.status();
+        };
+        source.sendSuccess(() -> Component.literal(result), false);
         return 1;
     }
 
