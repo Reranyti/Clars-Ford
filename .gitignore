@@ -44,3 +44,6 @@ art/music/third/
 /logs/
 /art/chromo/*.ogg
 /art/sounds/
+
+# the author's story notes (Lotos Studio exports): never publish
+/art/episodes/

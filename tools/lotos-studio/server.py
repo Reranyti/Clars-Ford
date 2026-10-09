@@ -30,7 +30,7 @@ HERE = Path(__file__).resolve().parent
 STATIC = HERE / "static"
 DATA = HERE / "data"
 PROJECT = HERE.parent.parent          # tools/lotos-studio -> repo root
-for _d in ("episodes", "history", "refs", "checks"):
+for _d in ("episodes", "history", "refs", "checks", "docs", "backups"):
     (DATA / _d).mkdir(parents=True, exist_ok=True)
 
 ID_RE = re.compile(r"^[a-z0-9_-]{1,40}$")
@@ -425,7 +425,106 @@ def job_scene_frames(job: Job, p: dict) -> bool:
     return rc == 0 and bool(job.images)
 
 
+def sandbox_root() -> Path:
+    return Path(CFG["tmp"]) / "lotos-sandbox"
+
+
+def sandbox_path(name: str) -> Path:
+    if not ID_RE.match(name or ""):
+        raise ValueError("имя песочницы: латиница, цифры, - и _")
+    return sandbox_root() / name
+
+
+def job_sandbox_create(job: Job, p: dict) -> bool:
+    path = sandbox_path(p.get("name", ""))
+    if path.exists():
+        job.log("Такая песочница уже есть.")
+        return False
+    sandbox_root().mkdir(parents=True, exist_ok=True)
+    rc = run_cmd(job, ["git", "-C", CFG["project"], "worktree", "add", "--detach", str(path)])
+    if rc == 0:
+        job.log(f"Песочница готова: {path}. Это отдельная копия проекта: ничего из неё не попадёт в основной, пока ты не нажмёшь «Применить».")
+    return rc == 0
+
+
+def job_sandbox_status(job: Job, p: dict) -> bool:
+    path = sandbox_path(p.get("name", ""))
+    a = run_cmd(job, ["git", "-C", str(path), "status", "--short", "-b"])
+    b = run_cmd(job, ["git", "-C", str(path), "diff", "--stat", "HEAD"])
+    return a == 0 and b == 0
+
+
+def job_sandbox_apply(job: Job, p: dict) -> bool:
+    path = sandbox_path(p.get("name", ""))
+    if run_cmd(job, ["git", "-C", str(path), "add", "-A"]) != 0:
+        return False
+    r = subprocess.run(["git", "-C", str(path), "diff", "--cached", "--binary"], capture_output=True, creationflags=NO_WINDOW)
+    if not r.stdout.strip():
+        job.log("В песочнице нет изменений, применять нечего.")
+        return True
+    patch = Path(CFG["tmp"]) / f"sandbox_{path.name}.patch"
+    patch.write_bytes(r.stdout)
+    if run_cmd(job, ["git", "-C", CFG["project"], "apply", "--check", str(patch)]) != 0:
+        job.log("Патч не ложится на основной проект: там есть пересекающиеся изменения. Ничего не изменено.")
+        return False
+    ok = run_cmd(job, ["git", "-C", CFG["project"], "apply", str(patch)]) == 0
+    if ok:
+        job.log("Изменения из песочницы перенесены в основной проект (в рабочие файлы, не закоммичены).")
+    return ok
+
+
+def job_sandbox_remove(job: Job, p: dict) -> bool:
+    path = sandbox_path(p.get("name", ""))
+    rc = run_cmd(job, ["git", "-C", CFG["project"], "worktree", "remove", "--force", str(path)])
+    run_cmd(job, ["git", "-C", CFG["project"], "worktree", "prune"])
+    return rc == 0
+
+
+def job_sandbox_compile(job: Job, p: dict) -> bool:
+    path = sandbox_path(p.get("name", ""))
+    tool = path / "shaderpack" / "tools" / "CompileAll.java"
+    sh = path / "shaderpack" / "LotosCinema" / "shaders"
+    if not tool.exists() or not sh.exists():
+        job.log("В этой песочнице нет шейдер-пака.")
+        return False
+    rc = run_cmd(job, [java_exe(), "-cp", lwjgl_cp(), str(tool), str(sh)])
+    return rc == 0 and any("ALL OK" in ln for ln in job.lines)
+
+
+def job_sandbox_build(job: Job, p: dict) -> bool:
+    path = sandbox_path(p.get("name", ""))
+    rc = run_cmd(job, ["cmd", "/c", str(path / "gradlew.bat"), "build", "-q", "--no-daemon", "-x", "test"], cwd=str(path))
+    jar = path / "build" / "libs" / CFG["jar_name"]
+    if jar.exists():
+        job.log(f"Собрано в песочнице: {jar} ({jar.stat().st_size / 2**20:.1f} МБ). В mods не копируется.")
+    return rc == 0 and jar.exists()
+
+
+def job_backup(job: Job, p: dict) -> bool:
+    import zipfile
+    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out = DATA / "backups" / f"studio_{stamp}.zip"
+    n = 0
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for sub in ("episodes", "docs", "refs"):
+            for f in (DATA / sub).rglob("*"):
+                if f.is_file():
+                    z.write(f, f.relative_to(DATA))
+                    n += 1
+    for old in sorted((DATA / "backups").glob("studio_*.zip"))[:-20]:
+        old.unlink(missing_ok=True)
+    job.log(f"Сохранено файлов: {n}. Архив: {out} ({out.stat().st_size / 2**20:.2f} МБ)")
+    return True
+
+
 JOB_KINDS = {
+    "sandbox_create": ("Песочница: создать", job_sandbox_create),
+    "sandbox_status": ("Песочница: что изменилось", job_sandbox_status),
+    "sandbox_apply": ("Песочница: применить в проект", job_sandbox_apply),
+    "sandbox_remove": ("Песочница: удалить", job_sandbox_remove),
+    "sandbox_compile": ("Песочница: проверка шейдера", job_sandbox_compile),
+    "sandbox_build": ("Песочница: сборка", job_sandbox_build),
+    "backup": ("Резервная копия данных Studio", job_backup),
     "disk": ("Свободное место", job_disk),
     "git_status": ("Git: состояние", job_git_status),
     "git_commit": ("Git: коммит", job_git_commit),
@@ -455,6 +554,13 @@ def start_job(kind: str, params: dict) -> Job:
             ok = False
         job.log("— готово —" if ok else "— завершено с ошибкой —")
         job.status = "ok" if ok else "fail"
+        try:
+            act = load_doc("activity")
+            act.append({"time": datetime.datetime.now().isoformat(timespec="seconds"), "title": job.title, "status": job.status,
+                        "seconds": round(time.time() - job.started, 1), "tail": job.lines[-4:]})
+            save_doc("activity", act[-300:], None)
+        except Exception:  # noqa: BLE001
+            pass
 
     threading.Thread(target=runner, daemon=True).start()
     return job
@@ -476,8 +582,29 @@ def tail_text(path: Path, lines: int = 400) -> str:
     return "\n".join(text.splitlines()[-lines:])
 
 
-def read_log(name: str) -> dict:
+def list_crashes() -> list:
     mc = Path(CFG["minecraft"])
+    files = list(mc.glob("hs_err_pid*.log")) + list((mc / "crash-reports").glob("*.txt"))
+    files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+    return [{"name": f.name, "time": datetime.datetime.fromtimestamp(f.stat().st_mtime).strftime("%d.%m %H:%M"),
+             "kb": round(f.stat().st_size / 1024)} for f in files[:40]]
+
+
+def git_log_list() -> list:
+    out = git_out("log", "-60", "--format=%h|%ad|%s", "--date=format:%d.%m %H:%M")
+    return [dict(zip(("hash", "when", "msg"), ln.split("|", 2))) for ln in out.splitlines() if ln.count("|") >= 2]
+
+
+def read_log(name: str, lines: int = 400, file: str = "") -> dict:
+    mc = Path(CFG["minecraft"])
+    lines = max(50, min(int(lines), 5000))
+    if name == "crashfile":
+        fn = Path(file).name
+        path = next((p for p in (mc / fn, mc / "crash-reports" / fn) if p.exists()), mc / fn)
+        if not path.exists():
+            return {"path": str(path), "text": "Файла нет."}
+        return {"path": str(path), "mtime": datetime.datetime.fromtimestamp(path.stat().st_mtime).strftime("%d.%m %H:%M:%S"),
+                "text": tail_text(path, lines)}
     if name == "crash":
         cands = list(mc.glob("hs_err_pid*.log")) + list((mc / "crash-reports").glob("*.txt"))
         if not cands:
@@ -492,16 +619,388 @@ def read_log(name: str) -> dict:
     if not path.exists():
         return {"path": str(path), "text": "Файла нет."}
     return {"path": str(path), "mtime": datetime.datetime.fromtimestamp(path.stat().st_mtime).strftime("%d.%m %H:%M:%S"),
-            "text": tail_text(path)}
+            "text": tail_text(path, lines)}
 
 
 def list_screenshots() -> list:
     d = Path(CFG["minecraft"]) / "screenshots"
     if not d.exists():
         return []
-    files = sorted(d.glob("*.png"), key=lambda f: f.stat().st_mtime, reverse=True)[:30]
+    files = sorted(d.glob("*.png"), key=lambda f: f.stat().st_mtime, reverse=True)[:80]
     return [{"name": f.name, "mb": round(f.stat().st_size / 2**20, 1),
              "time": datetime.datetime.fromtimestamp(f.stat().st_mtime).strftime("%d.%m %H:%M")} for f in files]
+
+
+# ------------------------------------------------------------------ shared documents (world, ideas, messages, tasks, screenshot notes)
+
+DOC_NAMES = {"world", "ideas", "messages", "tasks", "shotnotes", "wiki", "diagrams", "ratings", "activity", "wincheck"}
+DOC_FILE = {"messages": "for_claude"}      # exported as art/episodes/<file>.md
+LINE_COLORS = ["#7a5cff", "#ff4d6d", "#ffb703", "#2ec4b6", "#4cc9f0", "#f72585", "#90be6d", "#f8961e", "#9d4edd", "#43aa8b", "#e76f51", "#8ecae6"]
+
+
+def default_world() -> dict:
+    def hero(name, role, look="", notes="", color="#7a5cff"):
+        return {"id": uuid.uuid4().hex[:8], "name": name, "role": role, "look": look, "voice": "", "notes": notes, "color": color, "refs": []}
+    heroes = [
+        hero("Рей (игрок)", "Главный герой, его играет игрок", "", "Как DoorKeeper из DOORS (со слов автора).", "#7a5cff"),
+        hero("Хончо", "Герой", "", "Описание ждёт автора.", "#ff4d6d"),
+        hero("Сейри", "Герой", "", "Описание ждёт автора.", "#2ec4b6"),
+        hero("Люйдок", "Герой", "", "Описание ждёт автора.", "#ffb703"),
+        hero("Альтер", "Герой", "", "Описание ждёт автора.", "#4cc9f0"),
+        hero("Делантор", "Герой", "", "Описание ждёт автора.", "#90be6d"),
+        hero("Сержант 418", "Главный похититель и полуантагонист, враг-помеха",
+             "Молодой, «хороший военный». Подробная внешность позже.",
+             "Посланник нового директора лаборатории. Похищает игрока на многих ветках после катсцены с лестницей, выпытывает, что игрок узнал, и снова стирает память (со слов автора).", "#e76f51"),
+        hero("Директор лаборатории", "Новый директор", "", "Сержант 418 действует по его поручению.", "#9d4edd"),
+        hero("Архитекторы", "Есть примерный шаблон", "", "Подробности автор даст сам.", "#f72585"),
+        hero("Фигура с клинками", "Загадочная фигура", "", "Связана со ВСЕМИ Архитекторами. Оружие: клинки. Зрителю известно только из анимации (со слов автора).", "#cfd8ff"),
+    ]
+    places = [{"id": uuid.uuid4().hex[:8], "name": n, "desc": "", "look": "", "refs": []} for n in
+              ["Лаборатория", "Лестничная клетка", "Кабинет директора", "Камера", "Тёмная комната", "Коридор", "Лимб", "Зал Архитекторов"]]
+    lines = [{"n": i + 1, "name": f"Линия {i + 1}", "color": LINE_COLORS[i], "summary": "", "status": "idea"} for i in range(12)]
+    return {"heroes": heroes, "places": places, "lines": lines}
+
+
+def _id() -> str:
+    return uuid.uuid4().hex[:8]
+
+
+def default_wiki() -> list:
+    now = datetime.datetime.now().isoformat(timespec="minutes")
+
+    def page(title, body, tags=()):
+        return {"id": _id(), "title": title, "tags": list(tags), "body": body, "updated": now}
+    return [
+        page("Начало", "Это вики мода. Пиши страницы про героев, места, правила мира и сюжет.\n\nСсылка на другую страницу: [[Сержант 418]].\nЗаголовки: # Большой, ## Поменьше. Списки: строки с «- ».\n\nВсё, что ты здесь пишешь, лежит только у тебя и в `art/episodes` (в git не попадает).", ["справка"]),
+        page("Сержант 418", "# Сержант 418\n\n- Главный похититель и полуантагонист.\n- Молодой, «хороший военный». Внешность подробно позже.\n- Посланник нового директора лаборатории ([[Директор лаборатории]]).\n- Похищает игрока на многих ветках после катсцены с лестницей.\n- Выпытывает, что игрок узнал, и снова стирает память.\n- Роль в сюжете: враг-помеха.\n\n_Всё выше со слов автора._", ["герой", "антагонист"]),
+        page("Директор лаборатории", "# Директор лаборатории\n\nНовый директор. Сержант 418 действует по его поручению ([[Сержант 418]]).\n\nПодробности ждут автора.", ["герой"]),
+        page("Фигура с клинками", "# Фигура с клинками\n\n- Загадочная фигура.\n- Связана со ВСЕМИ Архитекторами ([[Архитекторы]]).\n- Оружие: клинки.\n- Зрителю известно только из анимации.", ["герой", "тайна"]),
+        page("Архитекторы", "# Архитекторы\n\nЕсть примерный шаблон. Подробности автор даст сам.\n\nСвязаны с [[Фигура с клинками]].", ["сюжет"]),
+        page("Тринадцатая концовка", "# Тринадцатая концовка\n\nГлавное раскрытие лора (со слов автора). Сейчас на втором плане: сначала эпизод 1.", ["сюжет", "концовка"]),
+    ]
+
+
+def default_diagrams() -> list:
+    def n(i, x, y, text, color):
+        return {"id": i, "x": x, "y": y, "text": text, "color": color}
+    return [{
+        "id": _id(), "name": "Связи героев",
+        "nodes": [n("a", 80, 80, "Директор лаборатории", "#9d4edd"), n("b", 380, 80, "Сержант 418", "#e76f51"), n("c", 680, 80, "Рей (игрок)", "#7a5cff"),
+                  n("d", 80, 260, "Фигура с клинками", "#cfd8ff"), n("e", 380, 260, "Архитекторы", "#f72585")],
+        "edges": [{"from": "a", "to": "b", "label": "посылает"}, {"from": "b", "to": "c", "label": "похищает, стирает память"},
+                  {"from": "d", "to": "e", "label": "связана со всеми"}],
+    }]
+
+
+def default_ideas() -> list:
+    now = datetime.datetime.now().isoformat(timespec="minutes")
+
+    def it(kind, text, tags=()):
+        return {"id": _id(), "kind": kind, "text": text, "status": "new", "votes": 0, "tags": list(tags), "source": "claude", "created": now}
+    return [
+        it("suggestion", "Тестовый мир-эталон: стенд блоков (камень, металл, лампы, вода, листва) и фиксированное время. Один и тот же кадр после каждой правки шейдера.", ["шейдер"]),
+        it("suggestion", "Отдельный профиль лаунчера «Лотос-эпизод» с нужными модами и шейдером, чтобы не трогать основной.", ["сборка"]),
+        it("improve", "Освободить место на диске C: (сейчас около 4 ГБ). Лаунчер и сборка падают, когда свободно меньше 3 ГБ.", ["диск"]),
+        it("improve", "Система лиц: моргание и эмоции подменой участка текстуры (глаза, брови), до сцен эпизода 1.", ["анимация"]),
+        it("suggestion", "Каталог звуков под метки «Звук» из раскадровки (Freesound, только CC0).", ["звук"]),
+        it("suggestion", "Два режима шейдера: «игра» (быстрее) и «видео» (максимум качества для записи).", ["шейдер"]),
+        it("improve", "Раз в неделю делать резервную копию данных Studio (кнопка в «Панели мода»).", ["сборка"]),
+        it("idea", "Аниматик с голосом браузера для проверки ритма сцены до сборки (в Studio уже есть, проверь на первом кадре).", ["эпизод"]),
+    ]
+
+
+def default_ratings() -> list:
+    def r(title, kind):
+        return {"id": _id(), "title": title, "kind": kind, "stars": 0, "comment": "", "date": ""}
+    return [r("Lotos Studio (эта программа)", "программа"), r("Шейдер-пак LotosCinema", "шейдер"),
+            r("Сцены 13-й концовки (как есть сейчас)", "сцена"), r("Редактор раскадровки", "функция")]
+
+
+def default_doc(name: str):
+    if name == "world":
+        return default_world()
+    if name == "shotnotes":
+        return {}
+    if name == "wiki":
+        return default_wiki()
+    if name == "diagrams":
+        return default_diagrams()
+    if name == "ideas":
+        return default_ideas()
+    if name == "ratings":
+        return default_ratings()
+    return []
+
+
+def doc_path(name: str) -> Path:
+    return DATA / "docs" / f"{name}.json"
+
+
+def load_doc(name: str):
+    p = doc_path(name)
+    if p.exists():
+        return json.loads(p.read_text(encoding="utf-8"))
+    d = default_doc(name)
+    p.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+    return d
+
+
+def save_doc(name: str, data, md) -> dict:
+    p = doc_path(name)
+    text = json.dumps(data, ensure_ascii=False, indent=2)
+    if p.exists() and p.read_text(encoding="utf-8") != text:
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        shutil.copy2(p, DATA / "history" / f"doc_{name}_{stamp}.json")
+        for f in sorted((DATA / "history").glob(f"doc_{name}_*.json"))[:-15]:
+            f.unlink(missing_ok=True)
+    p.write_text(text, encoding="utf-8")
+    if isinstance(md, str):
+        out = PROJECT / "art" / "episodes"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / f"{DOC_FILE.get(name, name)}.md").write_text(md, encoding="utf-8")
+    return {"ok": True}
+
+
+# ------------------------------------------------------------------ dashboard, diagnostics, mods, folders
+
+def git_out(*args: str, timeout: int = 25) -> str:
+    try:
+        r = subprocess.run(["git", "-C", CFG["project"], *args], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout, creationflags=NO_WINDOW)
+        return r.stdout.strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def dashboard() -> dict:
+    eps = []
+    for f in sorted((DATA / "episodes").glob("*.json")):
+        try:
+            ep = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        st = {"draft": 0, "ask": 0, "ok": 0, "redo": 0}
+        for s in ep.get("shots", []):
+            st[s.get("status", "draft")] = st.get(s.get("status", "draft"), 0) + 1
+        eps.append({"id": f.stem, "title": ep.get("title", f.stem), "shots": len(ep.get("shots", [])),
+                    "duration": sum(float(s.get("duration") or 0) for s in ep.get("shots", [])), "status": st})
+    disks = []
+    for letter in "CD":
+        root = f"{letter}:\\"
+        if Path(root).exists():
+            u = shutil.disk_usage(root)
+            disks.append({"letter": letter, "free_gb": round(u.free / 2**30, 1), "total_gb": round(u.total / 2**30), "free_pct": round(100 * u.free / u.total)})
+    lines = git_out("status", "-sb").splitlines()
+    last = git_out("log", "-1", "--format=%h|%s|%ad", "--date=format:%d.%m %H:%M").split("|", 2)
+    jar = Path(CFG["project"]) / "build" / "libs" / CFG["jar_name"]
+    modjar = Path(CFG["minecraft"]) / "mods" / CFG["jar_name"]
+    mc = Path(CFG["minecraft"])
+    errors, log_time = 0, ""
+    lp = mc / "logs" / "latest.log"
+    if lp.exists():
+        txt = tail_text(lp, 3000)
+        errors = len(re.findall(r"/ERROR\]|Exception", txt))
+        log_time = datetime.datetime.fromtimestamp(lp.stat().st_mtime).strftime("%d.%m %H:%M")
+    crashes = list(mc.glob("hs_err_pid*.log")) + list((mc / "crash-reports").glob("*.txt"))
+    crash = max(crashes, key=lambda f: f.stat().st_mtime) if crashes else None
+    docs = {n: load_doc(n) for n in ("ideas", "messages", "tasks")}
+    return {
+        "episodes": eps, "disks": disks,
+        "git": {"branch": lines[0] if lines else "", "dirty": len([ln for ln in lines[1:] if ln and not ln.startswith("??")]),
+                "untracked": len([ln for ln in lines[1:] if ln.startswith("??")]),
+                "last": {"hash": last[0] if len(last) > 2 else "", "msg": last[1] if len(last) > 2 else "", "when": last[2] if len(last) > 2 else ""}},
+        "build": {"jar": jar.exists(), "built": datetime.datetime.fromtimestamp(jar.stat().st_mtime).strftime("%d.%m %H:%M") if jar.exists() else "",
+                  "in_mods": modjar.exists(), "same": jar.exists() and modjar.exists() and jar.stat().st_size == modjar.stat().st_size},
+        "log": {"errors": errors, "time": log_time},
+        "crash": {"name": crash.name, "time": datetime.datetime.fromtimestamp(crash.stat().st_mtime).strftime("%d.%m %H:%M")} if crash else None,
+        "counts": {"screenshots": len(list((mc / "screenshots").glob("*.png"))) if (mc / "screenshots").exists() else 0,
+                   "mods": len(list((mc / "mods").glob("*.jar"))) if (mc / "mods").exists() else 0,
+                   "ideas": len(docs["ideas"]), "messages_new": len([m for m in docs["messages"] if m.get("status") == "new"]),
+                   "tasks_open": [t for t in docs["tasks"] if not t.get("done")][:6], "tasks_open_n": len([t for t in docs["tasks"] if not t.get("done")])},
+    }
+
+
+DIAG_PATTERNS = [
+    (r"OutOfMemoryError", "bad", "Не хватает памяти Java", "В лаунчере: Установки → профиль → Дополнительные → JVM-аргументы. Поставь -Xmx4G (или больше, если позволяет память)."),
+    (r"EXCEPTION_ACCESS_VIOLATION|GLFW error|nvoglv64|atio6axx|ig9icd", "bad", "Сбой видеодрайвера или OpenGL", "Обнови драйвер видеокарты. Проверь, вылетает ли игра без шейдера (Видео → Шейдеры → Выкл)."),
+    (r"Failed to compile|GLSL|(?i:shader).{0,40}(?i:error|failed)", "warn", "Ошибка шейдера", "Открой «Шейдер» → «Проверить компиляцию». Если ошибка в LotosCinema, пришли строку Claude."),
+    (r"Mixin apply (failed|for mod)|MixinApplyError|InvalidMixinException", "bad", "Конфликт модов (Mixin)", "Один из модов не стыкуется с другим. В строке рядом есть названия модов: проверь, не обновлялся ли один из них."),
+    (r"Found duplicate mods|DuplicateModsFoundException", "bad", "Два одинаковых мода", "В папке mods лежат две версии одного мода. Оставь одну."),
+    (r"Missing or unsupported mandatory dependencies|ModLoadingException", "bad", "Не хватает мода-зависимости", "В тексте ошибки названа нужная зависимость и версия. Положи её в mods."),
+    (r"NoSuchMethodError|NoClassDefFoundError|ClassNotFoundException|AbstractMethodError", "bad", "Несовместимые версии модов", "Обычно один мод собран под другую версию другого. Смотри, какой класс указан."),
+    (r"No space left|недостаточно места|not enough space", "bad", "Нет места на диске", "Освободи место на диске C: (нужно хотя бы 3 ГБ)."),
+    (r"Unable to download the launcher update|Failed to initialize GDK|LoadErrorNotPresent", "warn", "Проблема лаунчера Minecraft", "Проверь место на C: и что Xbox App и Службы игр обновлены; перезапусти лаунчер."),
+]
+
+
+DIAG_IGNORE = re.compile(r"\[mixin/\]|Error loading class|No translation found")   # known harmless noise
+
+
+def _age_days(path: Path) -> float:
+    return round((time.time() - path.stat().st_mtime) / 86400, 1)
+
+
+def diagnose() -> dict:
+    mc = Path(CFG["minecraft"])
+    sources = []            # (name, text, age in days)
+    lp = mc / "logs" / "latest.log"
+    if lp.exists():
+        sources.append(("latest.log", tail_text(lp, 3000), _age_days(lp)))
+    cr = read_log("crash")
+    if cr.get("path") and Path(cr["path"]).exists():
+        sources.append((Path(cr["path"]).name, cr["text"], _age_days(Path(cr["path"]))))
+    lp3 = mc / "launcher_log3.txt"
+    if lp3.exists() and _age_days(lp3) < 2:                 # an old launcher log says nothing about now
+        sources.append(("launcher_log3.txt", tail_text(lp3, 600), _age_days(lp3)))
+
+    def finding(level, title, hint, src, line, age):
+        old = age > 3
+        return {"level": "info" if old else level, "title": title + (f" (старое, {age:g} дн.)" if old else ""), "hint": hint, "source": src,
+                "evidence": line.strip()[:300], "age_days": age}
+    found = []
+    for pat, level, title, hint in DIAG_PATTERNS:
+        for src, text, age in sources:
+            line = next((ln for ln in text.splitlines() if re.search(pat, ln) and not DIAG_IGNORE.search(ln)), None)
+            if line:
+                found.append(finding(level, title, hint, src, line, age))
+                break
+    for src, text, age in sources:
+        own = [ln for ln in text.splitlines() if re.search(r"lotusblight|lotuslib", ln, re.I) and re.search(r"Exception|/ERROR\]", ln)]
+        if own:
+            found.append(finding("warn", "Ошибка в нашем моде (Lotos)", "Скопируй эту строку и пришли Claude: это правится в коде мода.", src, own[0], age))
+            break
+    return {"findings": found, "checked": [s for s, _, _ in sources]}
+
+
+def list_mods() -> dict:
+    d = Path(CFG["minecraft"]) / "mods"
+    mods, groups = [], {}
+    for f in sorted(d.glob("*.jar*")) if d.exists() else []:
+        mods.append({"name": f.name, "mb": round(f.stat().st_size / 2**20, 2), "disabled": f.name.endswith(".disabled")})
+        base = re.sub(r"\.jar(\.disabled)?$", "", f.name)
+        base = re.sub(r"[-_+ ]?(mc)?\d[\w.+-]*$", "", base, flags=re.I).lower()
+        groups.setdefault(base, []).append(f.name)
+    return {"mods": mods, "total_mb": round(sum(m["mb"] for m in mods), 1),
+            "duplicates": {k: v for k, v in groups.items() if k and len(v) > 1}}
+
+
+def open_folder(key: str) -> dict:
+    mc, proj = Path(CFG["minecraft"]), Path(CFG["project"])
+    folders = {"project": proj, "mods": mc / "mods", "screenshots": mc / "screenshots", "logs": mc / "logs",
+               "shaderpacks": mc / "shaderpacks", "art": proj / "art", "studio": DATA, "episodes": proj / "art" / "episodes"}
+    if key not in folders:
+        raise ValueError("unknown folder")
+    p = folders[key]
+    p.mkdir(parents=True, exist_ok=True)
+    os.startfile(str(p))  # type: ignore[attr-defined]
+    return {"ok": True, "path": str(p)}
+
+
+# ------------------------------------------------------------------ environments: Windows Sandbox, WSL, project sandboxes
+
+def memory_gb() -> tuple:
+    import ctypes
+
+    class MS(ctypes.Structure):
+        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong), ("ullTotalPhys", ctypes.c_ulonglong),
+                    ("ullAvailPhys", ctypes.c_ulonglong), ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                    ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong), ("sullAvailExtendedVirtual", ctypes.c_ulonglong)]
+    m = MS()
+    m.dwLength = ctypes.sizeof(MS)
+    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))  # type: ignore[attr-defined]
+    return round(m.ullTotalPhys / 2**30, 1), round(m.ullAvailPhys / 2**30, 1)
+
+
+def wsl_info() -> dict:
+    exe = Path(os.environ.get("windir", "C:\\Windows")) / "System32" / "wsl.exe"
+    if not exe.exists():
+        return {"exe": False, "distros": [], "ready": False}
+    try:
+        r = subprocess.run([str(exe), "-l", "-q"], capture_output=True, timeout=12, creationflags=NO_WINDOW)
+    except Exception:  # noqa: BLE001
+        return {"exe": True, "distros": [], "ready": False}
+    raw = r.stdout
+    text = raw.decode("utf-16-le", errors="ignore") if b"\x00" in raw else raw.decode("utf-8", errors="ignore")
+    distros = [ln.strip().replace("\x00", "") for ln in text.splitlines() if ln.strip()] if r.returncode == 0 else []
+    return {"exe": True, "distros": distros, "ready": bool(distros)}
+
+
+def list_sandboxes() -> list:
+    out = git_out("worktree", "list", "--porcelain")
+    root = str(sandbox_root()).replace("\\", "/").lower()
+    items = []
+    for block in out.split("\n\n"):
+        d = dict(ln.split(" ", 1) for ln in block.splitlines() if " " in ln)
+        path = d.get("worktree", "").replace("\\", "/")
+        if path.lower().startswith(root):
+            items.append({"name": Path(path).name, "path": path, "head": d.get("HEAD", "")[:7]})
+    return items
+
+
+def envs_status() -> dict:
+    total, free = memory_gb()
+    sb = Path(os.environ.get("windir", "C:\\Windows")) / "System32" / "WindowsSandbox.exe"
+    return {"ram_total": total, "ram_free": free, "sandbox_exe": sb.exists(), "wsl": wsl_info(), "sandboxes": list_sandboxes()}
+
+
+def windows_sandbox_xml(share_mods: bool, network: bool, mem_mb: int) -> str:
+    from xml.sax.saxutils import escape
+    proj, mc = Path(CFG["project"]), Path(CFG["minecraft"])
+    folders = [(proj, "LOTOS")] + ([(mc / "mods", "mods")] if share_mods else [])
+    mapped = "".join(f"<MappedFolder><HostFolder>{escape(str(p))}</HostFolder><SandboxFolder>C:\\Users\\WDAGUtilityAccount\\Desktop\\{n}</SandboxFolder><ReadOnly>true</ReadOnly></MappedFolder>" for p, n in folders)
+    mem = max(2048, min(int(mem_mb), 4096))
+    return (f"<Configuration><VGpu>Disable</VGpu><Networking>{'Enable' if network else 'Disable'}</Networking><MemoryInMB>{mem}</MemoryInMB>"
+            f"<MappedFolders>{mapped}</MappedFolders><LogonCommand><Command>explorer.exe C:\\Users\\WDAGUtilityAccount\\Desktop</Command></LogonCommand></Configuration>")
+
+
+def launch_windows_sandbox(req: dict) -> dict:
+    exe = Path(os.environ.get("windir", "C:\\Windows")) / "System32" / "WindowsSandbox.exe"
+    if not exe.exists():
+        raise ValueError("Windows Sandbox не включена в системе")
+    xml = windows_sandbox_xml(bool(req.get("share_mods")), bool(req.get("network")), int(req.get("mem_mb", 3072)))
+    if req.get("dry_run"):
+        return {"ok": True, "launched": False, "xml": xml}
+    wsb = Path(CFG["tmp"]) / "lotos.wsb"
+    wsb.write_text(xml, encoding="utf-8")
+    os.startfile(str(wsb))  # type: ignore[attr-defined]
+    return {"ok": True, "launched": True, "xml": xml, "path": str(wsb)}
+
+
+# ------------------------------------------------------------------ shader options (the sliders in the pack's #define lines)
+
+OPT_RE = re.compile(r"^(#define\s+)([A-Z][A-Z0-9_]+)(\s+)(-?\d+(?:\.\d+)?)(\s*//\s*\[([^\]]*)\])", re.M)
+
+
+def read_shader_options() -> list:
+    opts: dict[str, dict] = {}
+    for f in sorted(shaders_dir().glob("*.fsh")):
+        for m in OPT_RE.finditer(f.read_text(encoding="utf-8")):
+            o = opts.setdefault(m.group(2), {"name": m.group(2), "value": m.group(4), "choices": m.group(6).split(), "files": []})
+            o["files"].append(f.name)
+    return list(opts.values())
+
+
+def apply_shader_options(values: dict) -> dict:
+    known = {o["name"]: o for o in read_shader_options()}
+    clean = {}
+    for name, val in values.items():
+        o = known.get(name)
+        if not o:
+            raise ValueError(f"неизвестная настройка {name}")
+        v = str(val)
+        if not any(abs(float(v) - float(c)) < 1e-9 for c in o["choices"]):
+            raise ValueError(f"{name}: значение {v} не из списка {o['choices']}")
+        clean[name] = v
+    changed = 0
+    for f in sorted(shaders_dir().glob("*.fsh")):
+        raw = f.read_bytes().decode("utf-8")
+        new = raw
+        for name, v in clean.items():
+            new = re.sub(rf"^(#define\s+{name}\s+)-?\d+(?:\.\d+)?", lambda m, v=v: m.group(1) + v, new, flags=re.M)
+        if new != raw:
+            f.write_bytes(new.encode("utf-8"))
+            changed += 1
+    return {"ok": True, "files_changed": changed}
 
 
 # ------------------------------------------------------------------ http
@@ -557,8 +1056,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path in ("/", "/index.html"):
                 return self.serve_file(STATIC, "index.html")
-            if path in ("/app.js", "/style.css"):
-                return self.serve_file(STATIC, path[1:])
+            if path == "/style.css":
+                return self.serve_file(STATIC, "style.css")
+            if path.startswith("/js/"):
+                return self.serve_file(STATIC / "js", path[4:])
             if path == "/api/status":
                 return self.send_json(status_report())
             if path == "/api/episodes":
@@ -583,9 +1084,27 @@ class Handler(BaseHTTPRequestHandler):
                     return self.fail(404, "no such job")
                 return self.send_json(job.to_json(int(q.get("since", "0") or 0)))
             if path == "/api/log":
-                return self.send_json(read_log(q.get("name", "latest")))
+                return self.send_json(read_log(q.get("name", "latest"), int(q.get("lines", "400") or 400), q.get("file", "")))
+            if path == "/api/crashes":
+                return self.send_json(list_crashes())
+            if path == "/api/gitlog":
+                return self.send_json(git_log_list())
             if path == "/api/screenshots":
                 return self.send_json(list_screenshots())
+            if path == "/api/doc":
+                if q.get("name") not in DOC_NAMES:
+                    return self.fail(400, "bad doc")
+                return self.send_json(load_doc(q["name"]))
+            if path == "/api/dashboard":
+                return self.send_json(dashboard())
+            if path == "/api/diagnose":
+                return self.send_json(diagnose())
+            if path == "/api/mods":
+                return self.send_json(list_mods())
+            if path == "/api/envs":
+                return self.send_json(envs_status())
+            if path == "/api/shader_options":
+                return self.send_json(read_shader_options())
             if path.startswith("/refs/"):
                 return self.serve_file(DATA / "refs", path[6:])
             if path.startswith("/checks/"):
@@ -625,6 +1144,17 @@ class Handler(BaseHTTPRequestHandler):
                 fname = f"{uuid.uuid4().hex[:8]}_{name}"
                 (DATA / "refs" / fname).write_bytes(self.body(15_000_000))
                 return self.send_json({"file": fname})
+            if path == "/api/doc":
+                if q.get("name") not in DOC_NAMES:
+                    return self.fail(400, "bad doc")
+                req = json.loads(self.body(8_000_000).decode("utf-8"))
+                return self.send_json(save_doc(q["name"], req.get("data"), req.get("md")))
+            if path == "/api/open":
+                return self.send_json(open_folder(json.loads(self.body().decode("utf-8")).get("key", "")))
+            if path == "/api/sandbox_win":
+                return self.send_json(launch_windows_sandbox(json.loads(self.body().decode("utf-8"))))
+            if path == "/api/shader_options":
+                return self.send_json(apply_shader_options(json.loads(self.body().decode("utf-8")).get("values", {})))
             if path == "/api/job":
                 req = json.loads(self.body().decode("utf-8"))
                 kind = req.get("kind", "")
