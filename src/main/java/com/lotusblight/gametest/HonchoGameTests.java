@@ -82,6 +82,24 @@ public final class HonchoGameTests {
         check(error == null, "встреча не началась: " + error);
     }
 
+    /** During the meeting he must stand FACING the player (body and head), not turned away: the angle off the player's direction is reported. */
+    @GameTest(template = ARENA, batch = "honcho_facing", timeoutTicks = 200)
+    public static void meetingFacesThePlayer(GameTestHelper helper) {
+        ServerPlayer player = freshPlayer(helper);
+        start(player);
+        HonchoEntity honcho = honcho(helper);
+        helper.runAfterDelay(60, () -> {
+            double dx = player.getX() - honcho.getX(), dz = player.getZ() - honcho.getZ();
+            float want = (float) (net.minecraft.util.Mth.atan2(dz, dx) * (180.0 / Math.PI)) - 90.0f;      // the yaw that looks at the player
+            float body = net.minecraft.util.Mth.wrapDegrees(honcho.yBodyRot - want);
+            float head = net.minecraft.util.Mth.wrapDegrees(honcho.getYHeadRot() - want);
+            check(Math.abs(body) < 25.0f, "тело Хончо развёрнуто от игрока на " + Math.round(body) + " градусов (yaw тела " + Math.round(honcho.yBodyRot) + ", нужен " + Math.round(want) + ")");
+            check(Math.abs(head) < 25.0f, "голова Хончо развёрнута от игрока на " + Math.round(head) + " градусов");
+            leave(helper, player);
+            helper.succeed();
+        });
+    }
+
     @GameTest(template = ARENA, batch = "honcho_accept", timeoutTicks = 200)
     public static void acceptTakesHisHand(GameTestHelper helper) {
         ServerPlayer player = freshPlayer(helper);

@@ -142,6 +142,15 @@ public final class HonchoMeetingCutscene {
         applyLyingPose(mc);
 
         phaseTicks++;
+        // Diagnostics (temporary): once a second, which way Honcho is turned as THIS client sees him, against the way to the player.
+        if (phaseTicks % 20 == 0 && mc.level.getEntity(honchoEntityId) instanceof net.minecraft.world.entity.LivingEntity living) {
+            double dx = mc.player.getX() - living.getX(), dz = mc.player.getZ() - living.getZ();
+            float want = (float) (Mth.atan2(dz, dx) * (180.0 / Math.PI)) - 90.0f;
+            com.mojang.logging.LogUtils.getLogger().info("[HonchoDiag] phase={} scene={} yRot={} body={} head={} wantFacing={} offBody={} offYRot={} playerYaw={} dist={}",
+                    phase, living instanceof com.lotusblight.entity.HonchoEntity h ? h.getScene() : -1, Math.round(living.getYRot()), Math.round(living.yBodyRot),
+                    Math.round(living.getYHeadRot()), Math.round(want), Math.round(Mth.wrapDegrees(living.yBodyRot - want)),
+                    Math.round(Mth.wrapDegrees(living.getYRot() - want)), Math.round(mc.player.getYRot()), Math.round(Math.sqrt(dx * dx + dz * dz) * 10) / 10.0);
+        }
         if (phase == Phase.FALL && phaseTicks >= FALL_TICKS) {
             Entity honcho = mc.level.getEntity(honchoEntityId);
             if (CINEMATIC_LOADED && honcho != null) {
