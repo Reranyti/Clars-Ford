@@ -12,6 +12,7 @@ public final class LotusConfig {
     public static final ForgeConfigSpec.IntValue ACTIVE_CHUNK_RADIUS;
     public static final ForgeConfigSpec.IntValue MAX_PENDING_WORLDGEN_TASKS;
     public static final ForgeConfigSpec.IntValue WORLD_INFECTION_REFERENCE;
+    public static final ForgeConfigSpec.BooleanValue STARFALL_ENABLED;
     public static final ForgeConfigSpec.BooleanValue APPLY_RECOMMENDED_SETTINGS;
     public static final ForgeConfigSpec.ConfigValue<java.util.List<? extends String>> APPLIED_RECOMMENDATIONS;
 
@@ -34,6 +35,8 @@ public final class LotusConfig {
                 .defineInRange("maxPendingWorldgenTasks", 64, 8, 256);
         WORLD_INFECTION_REFERENCE = builder.comment("Sum of infectedBlockCount across every outbreak on the server treated as \"100% of the world captured\" - the Chase and StarFall thresholds are fractions of it.")
                 .defineInRange("worldInfectionReference", 100000, 1000, 10_000_000);
+        STARFALL_ENABLED = builder.comment("false = StarFall never starts by itself (the /lotus starfall command still works). Honcho can then be met without it.")
+                .define("starFallEnabled", false);
         builder.pop();
         builder.push("compatibility");
         APPLY_RECOMMENDED_SETTINGS = builder.comment("Set the recommended values in other installed mods' configs once (see /lotus compat).",

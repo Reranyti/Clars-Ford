@@ -92,7 +92,8 @@ public final class HonchoMeetingManager {
         if (!(event.player instanceof ServerPlayer player)) return;
         if (!player.onGround()) return;
         if (LotusPlayerState.getDialogueBranch(player) != LotusPlayerState.BRANCH_RESISTANCE) return;
-        if (!LotusPlayerState.hasSeenStarFall(player)) return;
+        // With StarFall switched off Honcho is no longer tied to it and can be met anywhere.
+        if (com.lotusblight.LotusConfig.STARFALL_ENABLED.get() && !LotusPlayerState.hasSeenStarFall(player)) return;
         if (LotusPlayerState.hasMetHoncho(player) || LotusPlayerState.isHonchoMeetingPending(player)) return;
         if (isBusyElsewhere(player)) return;
 

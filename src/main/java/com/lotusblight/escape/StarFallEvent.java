@@ -114,6 +114,7 @@ public final class StarFallEvent {
         MinecraftServer server = event.getServer();
         tickShowers(server);
         if (server.getTickCount() % SWEEP_INTERVAL_TICKS != 0) return;
+        if (!LotusConfig.STARFALL_ENABLED.get()) return;
 
         long totalInfected = 0;
         for (ServerLevel level : server.getAllLevels()) {
