@@ -19,5 +19,7 @@ public final class EndingsTitleButton {
         if (!(event.getScreen() instanceof TitleScreen title)) return;
         event.addListener(Button.builder(Component.literal("Концовки"), b -> title.getMinecraft().setScreen(new EndingsScreen(title)))
                 .bounds(6, 6, 70, 20).build());
+        event.addListener(Button.builder(Component.literal("Эпизоды"), b -> EpisodeMenu.openEpisodes())
+                .bounds(6, 30, 70, 20).build());
     }
 }
