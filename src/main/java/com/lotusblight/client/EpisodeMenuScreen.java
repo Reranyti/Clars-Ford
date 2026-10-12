@@ -76,5 +76,6 @@ public final class EpisodeMenuScreen extends Screen {
         MenuScene.text(g, font, "LOTOS", width / 2f, ty, titleScale, 0xE8F4FF);
         MenuScene.text(g, font, MenuScene.spaced("ЭПИЗОДНАЯ ИСТОРИЯ"), width / 2f, ty + font.lineHeight * titleScale + 4, Math.max(1f, titleScale / 3f), 0x7FA6C2);
         super.render(g, mouseX, mouseY, partial);
+        MenuScene.text(g, font, "Меню v3", width - 30, height - 12, 0.8f, 0x607890);
     }
 }
