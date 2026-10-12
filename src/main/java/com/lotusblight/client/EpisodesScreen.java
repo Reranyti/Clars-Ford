@@ -6,21 +6,25 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.FormattedCharSequence;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * "Выбор эпизода": a dark panel with the act and the overall readiness bar on top, three episode cards to a page (art
- * fills the whole card, number and name in the corner, a strip with the status at the bottom) and the pager below.
- * One page is one act of three episodes; four acts make the twelve. The pictures and the descriptions are placeholders.
- * Nothing starts from here yet.
+ * The episode picker: three big cards to a page (one page is one act, four acts make the twelve), the scene darkened behind
+ * them and a readiness bar on top. The cards fly in one after another with a whoosh; picking one sends the cards up and
+ * opens that episode's own menu ({@link EpisodeScreen}, a placeholder for now). The art on the cards is a placeholder.
  */
 public final class EpisodesScreen extends Screen {
     private static final int COUNT = 12;
     private static final int PER_PAGE = 3;
     private static final int PAGES = COUNT / PER_PAGE;
+    private static final long FLY_MS = 480;
+    private static final long STAGGER_MS = 150;
 
     /** How far along an episode is. Colour and weight (share of "ready") of each: complete, in development, soon, not ready. */
     enum Status {
@@ -41,8 +45,8 @@ public final class EpisodesScreen extends Screen {
     }
 
     /** The author sets these: the first episode is being made, nothing else has a script yet. */
-    private static final Status[] STATUS = new Status[COUNT];
-    private static final String[] NAMES = new String[COUNT];
+    static final Status[] STATUS = new Status[COUNT];
+    static final String[] NAMES = new String[COUNT];
     private static final String[] ROMAN = {"I", "II", "III", "IV"};
     private static int page;
 
@@ -53,15 +57,14 @@ public final class EpisodesScreen extends Screen {
     }
 
     private final Screen parent;
-    private long noteUntil;
-    private String note = "";
-    private int panelX;
-    private int panelY;
-    private int panelW;
-    private int panelH;
+    private final List<EpisodeCard> cards = new ArrayList<>();
+    private final boolean[] whooshed = new boolean[PER_PAGE];
+    private long enterAt;
+    private long leaveAt;
+    private int leaving = -1;
 
     public EpisodesScreen(Screen parent) {
-        super(Component.literal("Выбор эпизода"));
+        super(Component.literal("Эпизоды"));
         this.parent = parent;
     }
 
@@ -73,38 +76,48 @@ public final class EpisodesScreen extends Screen {
 
     @Override
     protected void init() {
-        panelW = (int) (width * 0.78);
-        panelH = (int) (height * 0.78);
-        panelX = (width - panelW) / 2;
-        panelY = (int) (height * 0.06);
-        int pad = Math.max(8, panelW / 40);
-        int gap = Math.max(6, panelW / 60);
-        int cardsTop = panelY + (int) (panelH * 0.2);
-        int cardsBottom = panelY + panelH - (int) (panelH * 0.1);
-        int cardW = (panelW - pad * 2 - gap * (PER_PAGE - 1)) / PER_PAGE;
+        cards.clear();
+        enterAt = Util.getMillis();
+        java.util.Arrays.fill(whooshed, false);
+        int gap = (int) (width * 0.025);
+        int cardW = (int) (width * 0.27);
+        int left = (width - (cardW * PER_PAGE + gap * (PER_PAGE - 1))) / 2;
+        int top = (int) (height * 0.2);
+        int cardH = (int) (height * 0.62);
         for (int i = 0; i < PER_PAGE; i++) {
             int index = page * PER_PAGE + i;
-            int number = index + 1;
-            addRenderableWidget(new EpisodeCard(panelX + pad + i * (cardW + gap), cardsTop, cardW, cardsBottom - cardsTop, number, NAMES[index], STATUS[index], b -> {
-                note = "Эпизод " + number + ": " + STATUS[number - 1].label.toLowerCase();
-                noteUntil = Util.getMillis() + 2500;
-            }));
+            EpisodeCard card = new EpisodeCard(left + i * (cardW + gap), top, cardW, cardH, index + 1, NAMES[index], STATUS[index], this::pick);
+            cards.add(card);
+            addRenderableWidget(card);
         }
-        int arrow = Math.max(14, (int) (height * 0.045));
-        int pagerY = panelY + panelH - (int) (panelH * 0.075);
-        int pagerRight = panelX + panelW - pad;
-        if (page < PAGES - 1) addRenderableWidget(new GlassButton(GlassButton.Kind.SMALL, pagerRight - arrow, pagerY, arrow, arrow, ">", null, b -> turn(1)));
-        if (page > 0) addRenderableWidget(new GlassButton(GlassButton.Kind.SMALL, pagerRight - arrow * 5, pagerY, arrow, arrow, "<", null, b -> turn(-1)));
+        int arrowW = (int) (width * 0.04);
+        int arrowH = (int) (height * 0.14);
+        int arrowY = top + cardH / 2 - arrowH / 2;
+        if (page > 0) addRenderableWidget(new GlassButton(GlassButton.Kind.SMALL, Math.max(2, left - gap - arrowW), arrowY, arrowW, arrowH, "<", null, b -> turn(-1)));
+        if (page < PAGES - 1) addRenderableWidget(new GlassButton(GlassButton.Kind.SMALL, Math.min(width - arrowW - 2, left + cardW * PER_PAGE + gap * (PER_PAGE - 1) + gap), arrowY, arrowW, arrowH, ">", null, b -> turn(1)));
         addRenderableWidget(new GlassButton(GlassButton.Kind.SMALL, (int) (width * 0.43), (int) (height * 0.9), (int) (width * 0.14), (int) (height * 0.065), "Назад", null, b -> onClose()));
     }
 
+    private void pick(EpisodeCard card) {
+        if (leaving >= 0) return;
+        leaving = card.number;
+        leaveAt = Util.getMillis();
+        whoosh(0.8f);
+    }
+
     private void turn(int delta) {
+        if (leaving >= 0) return;
         page = Math.max(0, Math.min(PAGES - 1, page + delta));
         rebuildWidgets();
     }
 
+    private static void whoosh(float pitch) {
+        Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.PLAYER_ATTACK_SWEEP, pitch, 0.6f));
+    }
+
     @Override
     public void onClose() {
+        if (leaving >= 0) return;
         minecraft.setScreen(parent);
     }
 
@@ -113,84 +126,112 @@ public final class EpisodesScreen extends Screen {
         // the scene is drawn in render()
     }
 
+    private static float easeOut(float t) {
+        float u = 1 - Math.max(0, Math.min(1, t));
+        return 1 - u * u * u;
+    }
+
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partial) {
+        long now = Util.getMillis();
         MenuScene.renderBack(g, width, height);
-        int pad = Math.max(8, panelW / 40);
-        int x1 = panelX + panelW;
-        int y1 = panelY + panelH;
-        MenuScene.glass(g, panelX, panelY, panelW, panelH, width, height, false);
-        g.fillGradient(panelX, panelY, x1, y1, 0xB00A1424, 0xD0050A14);
-        g.fill(panelX, panelY, x1, panelY + 1, 0xFF9FD6FF);
-        g.fill(panelX, panelY, panelX + 1, y1, 0xFF9FD6FF);
-        g.fill(panelX, y1 - 1, x1, y1, 0xC8000000);
-        g.fill(x1 - 1, panelY, x1, y1, 0xC8000000);
+        g.fill(0, 0, width, height, 0xA6000208);
 
+        // cards: fly in one after another, or fly up after a pick
+        float lt = leaving >= 0 ? (now - leaveAt) / (float) FLY_MS : 0;
+        for (int i = 0; i < cards.size(); i++) {
+            EpisodeCard card = cards.get(i);
+            float t = (now - enterAt - i * STAGGER_MS) / (float) FLY_MS;
+            if (t >= 0 && !whooshed[i]) {
+                whooshed[i] = true;
+                whoosh(1.15f - i * 0.12f);
+            }
+            float offset = (1 - easeOut(t)) * height * 0.8f;
+            if (leaving >= 0) offset = -lt * lt * height * 1.1f - i * 12 * lt;
+            card.setY(card.baseY + Math.round(offset));
+        }
+        if (leaving >= 0 && lt >= 1f) {
+            int n = leaving;
+            minecraft.setScreen(new EpisodeScreen(this, n, NAMES[n - 1], STATUS[n - 1]));
+            return;
+        }
+
+        int pad = (int) (width * 0.07);
         float titleScale = Math.max(1.4f, height * 0.035f / font.lineHeight);
-        drawLeft(g, "ВЫБОР ЭПИЗОДА", panelX + pad, panelY + pad, titleScale, 0xF0F4FA);
-        drawLeft(g, "АКТ " + ROMAN[page], panelX + pad, panelY + pad + font.lineHeight * titleScale + 3, 1f, 0x7F8CA0);
-        String ready = readiness() + "% · ОБЩАЯ ГОТОВНОСТЬ";
-        float rs = Math.max(1f, titleScale * 0.55f);
-        drawLeft(g, ready, x1 - pad - font.width(ready) * rs, panelY + pad + 2, rs, 0x8FA8FF);
+        float headFade = leaving >= 0 ? Math.max(0f, 1 - lt * 1.5f) : 1f;
+        int ha = ((int) (255 * headFade)) << 24;
+        if (headFade > 0.02f) {
+            drawLeft(g, "ВЫБОР ЭПИЗОДА", pad, height * 0.05f, titleScale, ha, 0xF0F4FA);
+            drawLeft(g, "АКТ " + ROMAN[page], pad, height * 0.05f + font.lineHeight * titleScale + 3, 1f, ha, 0x7F8CA0);
+            String ready = readiness() + "% · ОБЩАЯ ГОТОВНОСТЬ";
+            float rs = Math.max(1f, titleScale * 0.55f);
+            drawLeft(g, ready, width - pad - font.width(ready) * rs, height * 0.05f + 2, rs, ha, 0x8FA8FF);
 
-        int barY = panelY + (int) (panelH * 0.165);
-        int barH = Math.max(3, height / 200);
-        int barW = panelW - pad * 2;
-        int segGap = 2;
-        int segW = (barW - segGap * (COUNT - 1)) / COUNT;
-        for (int i = 0; i < COUNT; i++) {
-            boolean here = i / PER_PAGE == page;
-            int sx = panelX + pad + i * (segW + segGap);
-            g.fill(sx, barY, sx + segW, barY + barH, (here ? 0xFF000000 : 0x70000000) | STATUS[i].rgb);
-            if (here) g.fill(sx, barY - 1, sx + segW, barY, 0x40FFFFFF);
+            int barY = (int) (height * 0.14);
+            int barH = Math.max(3, height / 190);
+            int barW = width - pad * 2;
+            int segGap = 3;
+            int segW = (barW - segGap * (COUNT - 1)) / COUNT;
+            for (int i = 0; i < COUNT; i++) {
+                boolean here = i / PER_PAGE == page;
+                int sx = pad + i * (segW + segGap);
+                int a = (int) ((here ? 255 : 120) * headFade);
+                g.fill(sx, barY, sx + segW, barY + barH, (a << 24) | STATUS[i].rgb);
+                if (here) g.fill(sx, barY - 1, sx + segW, barY, ((int) (64 * headFade) << 24) | 0xFFFFFF);
+            }
         }
 
         super.render(g, mouseX, mouseY, partial);
 
-        int footY = y1 - (int) (panelH * 0.06);
-        drawLeft(g, "АКТ " + String.format("%02d", page + 1) + " / " + String.format("%02d", PAGES), panelX + pad, footY, 1f, 0x7F8CA0);
-        String pager = (page + 1) + " из " + PAGES;
-        int arrow = Math.max(14, (int) (height * 0.045));
-        drawLeft(g, pager, x1 - pad - arrow * 3 - font.width(pager) / 2f, footY, 1f, 0xE8F2FA);
-        MenuScene.text(g, font, "Эпизоды v3", width - 40, height - 12, 0.8f, 0x607890);
-        if (Util.getMillis() < noteUntil) {
-            MenuScene.text(g, font, note, width / 2f, height * 0.865f, 1.1f, 0xFFFFA0);
+        if (headFade > 0.02f) {
+            String pager = "АКТ " + String.format("%02d", page + 1) + " / " + String.format("%02d", PAGES);
+            drawLeft(g, pager, width / 2f - font.width(pager) / 2f, height * 0.855f, 1f, ha, 0x9FB0C4);
+            MenuScene.text(g, font, "Эпизоды v4", width - 40, height - 12, 0.8f, 0x607890);
         }
     }
 
-    private void drawLeft(GuiGraphics g, String text, float x, float y, float scale, int rgb) {
+    private void drawLeft(GuiGraphics g, String text, float x, float y, float scale, int alphaBits, int rgb) {
         var pose = g.pose();
         pose.pushPose();
         pose.translate(x, y, 0);
         pose.scale(scale, scale, 1);
-        g.drawString(font, text, 0, 0, 0xFF000000 | rgb, true);
+        g.drawString(font, text, 0, 0, alphaBits | rgb, true);
         pose.popPose();
     }
 
     @Override
     public boolean keyPressed(int key, int scan, int mods) {
-        if (key == 262 && page < PAGES - 1) {
+        if (key == 262) {
             turn(1);
             return true;
         }
-        if (key == 263 && page > 0) {
+        if (key == 263) {
             turn(-1);
             return true;
         }
         return super.keyPressed(key, scan, mods);
     }
 
-    /** One episode card: art placeholder over the whole card, number and name in the corner, status strip at the bottom. */
+    /** One big episode card: art placeholder over the whole card, number and name in the corner, status strip at the bottom. */
     private static final class EpisodeCard extends Button {
-        private final int number;
+        final int number;
+        final int baseY;
         private final String title;
         private final Status status;
+        private final java.util.function.Consumer<EpisodeCard> onPick;
 
-        EpisodeCard(int x, int y, int w, int h, int number, String title, Status status, OnPress press) {
-            super(x, y, w, h, Component.literal("Эпизод " + number), press, DEFAULT_NARRATION);
+        EpisodeCard(int x, int y, int w, int h, int number, String title, Status status, java.util.function.Consumer<EpisodeCard> onPick) {
+            super(x, y, w, h, Component.literal("Эпизод " + number), b -> { }, DEFAULT_NARRATION);
             this.number = number;
+            this.baseY = y;
             this.title = title;
             this.status = status;
+            this.onPick = onPick;
+        }
+
+        @Override
+        public void onPress() {
+            onPick.accept(this);
         }
 
         private static int mix(int a, int b, float t) {
@@ -205,12 +246,12 @@ public final class EpisodesScreen extends Screen {
             Font font = Minecraft.getInstance().font;
             boolean hot = isHoveredOrFocused();
             int x = getX();
-            int y = getY();
+            int y = getY() - (hot ? 4 : 0);
             int x1 = x + width;
             int y1 = y + height;
-            int pad = Math.max(5, width / 16);
+            int pad = Math.max(6, width / 16);
 
-            int top = mix(status.rgb, 0x0A1424, 0.45f);
+            int top = mix(status.rgb, 0x0A1424, hot ? 0.3f : 0.45f);
             int bottom = mix(status.rgb, 0x0A1424, 0.75f);
             g.fillGradient(x, y, x1, y1, 0xFF000000 | top, 0xFF000000 | bottom);
             g.fill(x, y, x1, y + 1, 0xFF9FD6FF);
@@ -219,25 +260,21 @@ public final class EpisodesScreen extends Screen {
             g.fill(x1 - 1, y, x1, y1, 0xC8000000);
             if (hot) g.renderOutline(x - 1, y - 1, width + 2, height + 2, 0xFFFFFFFF);
 
-            // art placeholder in the middle: a diamond and its caption
+            // art placeholder: a diamond in the middle
             int cx = x + width / 2;
-            int cy = y + height / 2 - font.lineHeight;
-            int d = Math.max(4, width / 22);
+            int cy = y + height / 2;
+            int d = Math.max(5, width / 14);
             var pose = g.pose();
             pose.pushPose();
-            pose.translate(cx, cy - font.lineHeight, 0);
+            pose.translate(cx, cy, 0);
             pose.mulPose(com.mojang.math.Axis.ZP.rotationDegrees(45));
             g.renderOutline(-d, -d, d * 2, d * 2, 0xFFE8F2FA);
             pose.popPose();
 
             // number and name, top left
-            float ts = Math.max(1f, Math.min(1.8f, width / 90f));
-            pose.pushPose();
-            pose.translate(x + pad, y + pad, 0);
-            pose.scale(0.85f, 0.85f, 1);
-            g.drawString(font, "ЭПИЗОД " + String.format("%02d", number), 0, 0, 0xFFF0F4FA, true);
-            pose.popPose();
-            float ty = y + pad + font.lineHeight * 0.85f + 3;
+            float ts = Math.max(1f, Math.min(2.2f, width / 80f));
+            g.drawString(font, "ЭПИЗОД " + String.format("%02d", number), x + pad, y + pad, 0xFFF0F4FA, true);
+            float ty = y + pad + font.lineHeight + 4;
             String shown = title != null ? title.toUpperCase() : "БЕЗ НАЗВАНИЯ";
             List<FormattedCharSequence> lines = font.split(Component.literal(shown), (int) ((width - pad * 2) / ts));
             for (FormattedCharSequence line : lines) {
@@ -246,11 +283,11 @@ public final class EpisodesScreen extends Screen {
                 pose.scale(ts, ts, 1);
                 g.drawString(font, line, 0, 0, hot ? 0xFFFFFFA0 : 0xFFFFFFFF, true);
                 pose.popPose();
-                ty += font.lineHeight * ts + 1;
+                ty += font.lineHeight * ts + 2;
             }
 
             // bottom strip: description (placeholder) and status
-            int stripH = Math.max(font.lineHeight * 2 + pad + 2, height / 5);
+            int stripH = Math.max(font.lineHeight * 2 + pad + 4, height / 6);
             g.fill(x + 1, y1 - stripH, x1 - 1, y1 - 1, 0xC0080C14);
             g.fill(x + 1, y1 - stripH, x1 - 1, y1 - stripH + 1, 0x409FD6FF);
             g.drawString(font, "Описание будет позже", x + pad, y1 - stripH + pad / 2 + 1, 0xFFB8C8DA, true);
