@@ -168,7 +168,7 @@ const PAGES = {};         // key -> { title, icon, group, order, render(root) }
 const S = { page: "dashboard", leave: [], badges: {} };
 const onLeave = fn => S.leave.push(fn);
 function registerPage(key, def) { PAGES[key] = def; }
-const CORE_PAGES = ["dashboard", "episode", "claude", "shader"];       // what the simple mode shows
+const CORE_PAGES = ["dashboard", "episode", "timeline", "claude", "shader"];       // what the simple mode shows
 function navLink(key, p) {
   return h("a", { class: S.page === key ? "on" : "", href: "#" + key, onclick: () => $("#side").classList.remove("open") }, icon(p.icon), p.title, S.badges[key] ? h("span", { class: "bd" }, S.badges[key]) : null);
 }

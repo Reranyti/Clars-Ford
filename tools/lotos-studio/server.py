@@ -774,8 +774,8 @@ def list_screenshots() -> list:
 
 # ------------------------------------------------------------------ shared documents (world, ideas, messages, tasks, screenshot notes)
 
-DOC_NAMES = {"world", "ideas", "messages", "tasks", "shotnotes", "wiki", "diagrams", "ratings", "activity", "wincheck"}
-DOC_FILE = {"messages": "for_claude"}      # exported as art/episodes/<file>.md
+DOC_NAMES = {"world", "ideas", "messages", "tasks", "shotnotes", "wiki", "diagrams", "ratings", "activity", "wincheck", "timeline"}
+DOC_FILE = {"messages": "for_claude", "timeline": "meta_line_timeline"}      # exported as art/episodes/<file>.md
 LINE_COLORS = ["#7a5cff", "#ff4d6d", "#ffb703", "#2ec4b6", "#4cc9f0", "#f72585", "#90be6d", "#f8961e", "#9d4edd", "#43aa8b", "#e76f51", "#8ecae6"]
 
 
@@ -857,6 +857,14 @@ def default_ratings() -> list:
             r("Сцены 13-й концовки (как есть сейчас)", "сцена"), r("Редактор раскадровки", "функция")]
 
 
+def default_timeline() -> dict:
+    # The author's first marks of the long track (about 6:59): animation up to 0:18, actions from 0:18, the minigame from 0:38.
+    def m(t, title, kind):
+        return {"id": _id(), "t": t, "title": title, "kind": kind, "text": ""}
+    return {"track": {"name": "", "duration": 419.84},
+            "marks": [m(0, "Анимация", "anim"), m(18, "Начало действий", "action"), m(38, "Начало мини-игры", "game")]}
+
+
 def default_doc(name: str):
     if name == "world":
         return default_world()
@@ -870,6 +878,8 @@ def default_doc(name: str):
         return default_ideas()
     if name == "ratings":
         return default_ratings()
+    if name == "timeline":
+        return default_timeline()
     return []
 
 
