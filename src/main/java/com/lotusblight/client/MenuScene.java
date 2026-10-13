@@ -66,20 +66,15 @@ final class MenuScene {
             int srcW = Math.round(sw / scale);
             int srcH = Math.round(sh / scale);
             g.blit(CUSTOM, 0, 0, sw, sh, (customW - srcW) / 2f, (customH - srcH) / 2f, srcW, srcH, customW, customH);
-        } else if (MenuShaders.ready()) {
-            MenuShaders.draw(g, 0, 0, sw, sh, sw, sh, 0);
         } else {
-            g.fillGradient(0, 0, sw, (int) (sh * 0.52), 0xFF01030A, 0xFF12406A);
-            g.fillGradient(0, (int) (sh * 0.52), sw, sh, 0xFF0E3B5E, 0xFF010608);
+            g.fill(0, 0, sw, sh, 0xFF000000);
+            g.fillGradient(0, 0, sw, sh / 2, 0x00000000, 0x28506E96);
         }
     }
 
+    /** The dark glass behind a button (the backdrop is black now, so it is just a deep blue gradient). */
     static void glass(GuiGraphics g, int x, int y, int w, int h, int sw, int sh, boolean hot) {
-        if (!customOk && MenuShaders.ready()) {
-            MenuShaders.draw(g, x, y, x + w, y + h, sw, sh, hot ? 2 : 1);
-        } else {
-            g.fill(x, y, x + w, y + h, hot ? 0xCC1B3A58 : 0xCC0A1A2B);
-        }
+        g.fillGradient(x, y, x + w, y + h, hot ? 0xE0102640 : 0xE00A1624, hot ? 0xE0071526 : 0xE0040A14);
     }
 
     /** Text with the game font, scaled and centred on cx, with Minecraft's drop shadow. */

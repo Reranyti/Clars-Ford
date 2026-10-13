@@ -21,41 +21,47 @@ import org.joml.Matrix4f;
 import java.io.IOException;
 
 /**
- * The real GPU shader of the title screen (assets/lotusblight/shaders/core/menu_scene.*): the whole night-ocean scene is
- * computed per pixel, and the same program is drawn behind each button with a blur, so the scene shows through them.
+ * The GPU shader of the title screen (assets/lotusblight/shaders/core/puppet.*): the dark figure with its hands and the threads, ray-marched per pixel.
  */
 @Mod.EventBusSubscriber(modid = LotusBlight.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.MOD)
 public final class MenuShaders {
-    private static ShaderInstance scene;
+    private static ShaderInstance puppet;
 
     private MenuShaders() {}
 
     @SubscribeEvent
     public static void onRegister(RegisterShadersEvent event) throws IOException {
-        event.registerShader(new ShaderInstance(event.getResourceProvider(), new ResourceLocation(LotusBlight.MODID, "menu_scene"),
-                DefaultVertexFormat.POSITION_TEX), shader -> scene = shader);
+        event.registerShader(new ShaderInstance(event.getResourceProvider(), new ResourceLocation(LotusBlight.MODID, "puppet"),
+                DefaultVertexFormat.POSITION_TEX), shader -> puppet = shader);
     }
 
-    static boolean ready() {
-        return scene != null;
+    static boolean puppetReady() {
+        return puppet != null;
     }
 
-    /** Fills the rectangle with the scene (mode 0) or with the blurred scene for a button (1, hovered 2). */
-    static void draw(GuiGraphics g, int x0, int y0, int x1, int y1, int sw, int sh, float mode) {
-        if (scene == null) return;
+    /**
+     * Draws the figure (puppet.fsh) over the whole screen: {@code curl} the bend of every finger (right hand first = the screen's left), {@code lift}
+     * the height of the two hands, {@code threadEnd} the world position where each of the eight threads ends, {@code threadOn} which are not cut.
+     */
+    static void drawPuppet(GuiGraphics g, int sw, int sh, float[] curl, float spread, float[] lift, float[] threadEnd, float[] threadOn) {
+        if (puppet == null) return;
         g.flush();
         Minecraft mc = Minecraft.getInstance();
         Matrix4f pose = g.pose().last().pose();
-        RenderSystem.setShader(() -> scene);
-        scene.safeGetUniform("uTime").set((float) ((Util.getMillis() % 1_000_000L) / 1000.0));
-        scene.safeGetUniform("uMode").set(mode);
-        scene.safeGetUniform("uRes").set((float) mc.getWindow().getWidth(), (float) mc.getWindow().getHeight());
+        RenderSystem.setShader(() -> puppet);
+        puppet.safeGetUniform("uTime").set((float) ((Util.getMillis() % 1_000_000L) / 1000.0));
+        puppet.safeGetUniform("uRes").set((float) mc.getWindow().getWidth(), (float) mc.getWindow().getHeight());
+        puppet.safeGetUniform("uSpread").set(spread);
+        puppet.safeGetUniform("uLift").set(lift);
+        puppet.safeGetUniform("uCurl").set(curl);
+        puppet.safeGetUniform("uThreadEnd").set(threadEnd);
+        puppet.safeGetUniform("uThreadOn").set(threadOn);
         BufferBuilder buffer = Tesselator.getInstance().getBuilder();
         buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
-        buffer.vertex(pose, x0, y1, 0).uv(x0 / (float) sw, y1 / (float) sh).endVertex();
-        buffer.vertex(pose, x1, y1, 0).uv(x1 / (float) sw, y1 / (float) sh).endVertex();
-        buffer.vertex(pose, x1, y0, 0).uv(x1 / (float) sw, y0 / (float) sh).endVertex();
-        buffer.vertex(pose, x0, y0, 0).uv(x0 / (float) sw, y0 / (float) sh).endVertex();
+        buffer.vertex(pose, 0, sh, 0).uv(0, 1).endVertex();
+        buffer.vertex(pose, sw, sh, 0).uv(1, 1).endVertex();
+        buffer.vertex(pose, sw, 0, 0).uv(1, 0).endVertex();
+        buffer.vertex(pose, 0, 0, 0).uv(0, 0).endVertex();
         BufferUploader.drawWithShader(buffer.end());
     }
 }

@@ -20,6 +20,9 @@ final class GlassButton extends Button {
     private final Kind kind;
     private final String text;
     private final String iconKind;
+    /** Hanging on a thread: the button swings about its top centre by this angle (radians); a broken button is not drawn. */
+    float swing;
+    boolean broken;
 
     GlassButton(Kind kind, int x, int y, int w, int h, String text, String iconKind, OnPress press) {
         super(x, y, w, h, Component.literal(text), press, DEFAULT_NARRATION);
@@ -48,6 +51,13 @@ final class GlassButton extends Button {
         int y1 = y + h;
         int accent = danger ? 0xFF7878 : 0x9FD6FF;
 
+        if (broken) return;
+        g.pose().pushPose();
+        if (swing != 0) {
+            g.pose().translate(x + w / 2f, y, 0);
+            g.pose().mulPose(Axis.ZP.rotation(swing));
+            g.pose().translate(-(x + w / 2f), -y, 0);
+        }
         MenuScene.glass(g, x, y, w, h, sw, sh, hot);
         g.fillGradient(x, y, x1, y1, argb(hot ? 0x40 : 0x70, danger ? 0x2A0A0E : 0x06182C), argb(hot ? 0x70 : 0xA0, danger ? 0x12040A : 0x020A14));
 
@@ -82,6 +92,7 @@ final class GlassButton extends Button {
         }
 
         drawContent(g, mc.font, x, y, w, h, hot, danger, t);
+        g.pose().popPose();
     }
 
     private void decorateContinue(GuiGraphics g, int x, int y, int w, int h, int accent, double t, boolean hot) {
