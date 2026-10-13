@@ -232,7 +232,7 @@ public final class GameMain {
 
             @Override public void keyPressed(KeyEvent e) {
                 int k = e.getKeyCode();
-                if (k == KeyEvent.VK_ESCAPE) leave(0);
+                if (k == KeyEvent.VK_ESCAPE) engine.escape();
                 if ((k == KeyEvent.VK_SPACE || k == KeyEvent.VK_ENTER || k == KeyEvent.VK_Z || k == KeyEvent.VK_X) && down.add(k)) engine.space();
             }
 
@@ -265,16 +265,17 @@ public final class GameMain {
             private int px = -1, py = -1;
             private long warpedAt;
             private void moved(MouseEvent e) {
+                engine.hover(e.getX(), e.getY());
                 boolean held = (e.getModifiersEx() & MouseEvent.BUTTON1_DOWN_MASK) != 0;
                 // The cursor put back by the warp raises an event of its own, and on a scaled display it can land a pixel off: for a moment
                 // after a warp nothing is judged, or a thread right beside it would push the cursor back forever.
-                boolean settling = System.nanoTime() - warpedAt < 80_000_000L;
+                boolean settling = PauseClock.nano() - warpedAt < 80_000_000L;
                 if (!settling && px >= 0 && engine.cursorBlocked(px, py, e.getX(), e.getY(), held, canvas.getWidth(), canvas.getHeight())) {
                     try {
                         java.awt.Point o = canvas.getLocationOnScreen();
                         if (cursorRobot == null) cursorRobot = new java.awt.Robot();
                         cursorRobot.mouseMove(o.x + px, o.y + py);
-                        warpedAt = System.nanoTime();
+                        warpedAt = PauseClock.nano();
                         return;
                     } catch (Exception | Error ignored) {
                         // no Robot: the wall can't hold, so the cursor goes where it went
@@ -395,7 +396,7 @@ public final class GameMain {
         private final String song1Wav, song2Wav, animWav;
         private Phase phase = Phase.SONG1;
         private Clip clip;
-        private long phaseStartNano = System.nanoTime();
+        private long phaseStartNano = PauseClock.nano();
 
         Engine(RhythmGame g1, RhythmGame g2, RhythmGame g3, FinaleVideo anim, FakeWindows fw, Karaoke k, ContactBreak contact, String s1, String s2, String s3, String aw) {
             this.g3 = g3; this.song3Wav = s3; this.backdrop3.setNoWall(true); this.backdrop3.setNoWindows(true);
@@ -427,11 +428,11 @@ public final class GameMain {
             if (clip != null) clip.stop();                  // stays open, where it stopped
             tutor.setTutorial();
             tutorial = true;
-            tutorialStartNano = System.nanoTime();
+            tutorialStartNano = PauseClock.nano();
             if (briefClip != null) { gain(briefClip, 0); briefClip.setFramePosition(0); briefClip.start(); }
         }
 
-        private double tutorialMs() { return (System.nanoTime() - tutorialStartNano) / 1e6; }
+        private double tutorialMs() { return (PauseClock.nano() - tutorialStartNano) / 1e6; }
 
         private void stepTutorial(double tut) {
             if (briefClip != null) {
@@ -483,14 +484,14 @@ public final class GameMain {
             // Only the song itself: Honcho's track, opened at the start, has to survive the change of song.
             if (clip != null) { clip.stop(); clip.close(); clip = null; }
             // Without a track the clock runs on its own, so each song still starts from zero.
-            phaseStartNano = System.nanoTime();
+            phaseStartNano = PauseClock.nano();
             if (wav == null) return;
             try (AudioInputStream in = AudioSystem.getAudioInputStream(new File(wav))) {
                 clip = AudioSystem.getClip();
                 clip.open(in);
                 clip.start();
             } catch (Exception e) { clip = null; }
-            phaseStartNano = System.nanoTime();
+            phaseStartNano = PauseClock.nano();
         }
 
         private void stop() {
@@ -515,30 +516,66 @@ public final class GameMain {
         private void end(Phase last) {
             phase = last;
             stop();
-            endedAt = System.nanoTime();
+            endedAt = PauseClock.nano();
         }
 
         /** Seconds the results have been up (a key still held from the song must not skip them). */
         private double resultsShownFor() {
-            return (System.nanoTime() - endedAt) / 1e9;
+            return (PauseClock.nano() - endedAt) / 1e9;
         }
 
         private void closeWhenShown() {
             if (phase == Phase.RESULTS && song3Played) return;              // after the third song the results wait for the space bar
-            if ((System.nanoTime() - endedAt) / 1e9 < END_SCREEN_SECONDS) return;
+            if ((PauseClock.nano() - endedAt) / 1e9 < END_SCREEN_SECONDS) return;
             leave(0);
         }
 
         private double clockMs() {
-            if (leadIn) return (System.nanoTime() - leadStartNano) / 1e6 - LEAD_MS;
+            if (leadIn) return (PauseClock.nano() - leadStartNano) / 1e6 - LEAD_MS;
             return clip != null ? clip.getMicrosecondPosition() / 1000.0
-                    : (System.nanoTime() - phaseStartNano) / 1e6;
+                    : (PauseClock.nano() - phaseStartNano) / 1e6;
         }
 
         private int taps;
         private double lastTapMs = -1e9;
 
+        // Esc in a song or the lesson stops the game and asks "close the window?". In the cutscenes there is no way out (on purpose);
+        // on the results and the defeat screen it leaves, as it says there.
+        private boolean paused;
+        private boolean clipWas, briefWas;
+        private final PauseDialog pauseDialog = new PauseDialog();
+
+        void escape() {
+            if (paused) { resumeGame(); return; }
+            switch (phase) {
+                case SONG1, LESSON, SONG2, SONG3 -> pauseGame();
+                case RESULTS, DEFEAT -> leave(0);
+                default -> { }
+            }
+        }
+
+        private void pauseGame() {
+            paused = true;
+            PauseClock.pause();
+            clipWas = clip != null && clip.isRunning();
+            briefWas = briefClip != null && briefClip.isRunning();
+            if (clipWas) clip.stop();
+            if (briefWas) briefClip.stop();
+        }
+
+        private void resumeGame() {
+            PauseClock.resume();
+            if (clipWas && clip != null) clip.start();
+            if (briefWas && briefClip != null) briefClip.start();
+            paused = false;
+        }
+
+        void hover(int x, int y) {
+            if (paused) pauseDialog.move(x, y);
+        }
+
         void space() {
+            if (paused) return;
             if (phase == Phase.INTERLUDE) { interlude.press(); return; }
             if (phase == Phase.LESSON) { tutor.press(ContactBreak.START + tutorialMs()); return; }
             if (phase == Phase.RESULTS && song3Played) { if (resultsShownFor() > 1.2) startFinale(); return; }      // on from the results to the closing scene
@@ -576,6 +613,12 @@ public final class GameMain {
         }
 
         void click(int x, int y, int w, int h) {
+            if (paused) {
+                int hit = pauseDialog.hit(x, y);
+                if (hit == PauseDialog.YES) leave(0);
+                else if (hit == PauseDialog.NO) resumeGame();
+                return;
+            }
             double t = clockMs();
             if (phase == Phase.INTERLUDE) interlude.click(x, y);
             else if (phase == Phase.RESULTS && song3Played) { if (resultsShownFor() > 1.2) startFinale(); }
@@ -594,12 +637,17 @@ public final class GameMain {
 
         /** A step of the cursor from (px,py) to (x,y): true if a Chromo thread stops it. */
         boolean cursorBlocked(int px, int py, int x, int y, boolean leftHeld, int w, int h) {
-            return phase == Phase.SONG1 && chromo1 != null && chromo1.blocked(px, py, x, y, leftHeld, clockMs(), w, h);
+            return !paused && phase == Phase.SONG1 && chromo1 != null && chromo1.blocked(px, py, x, y, leftHeld, clockMs(), w, h);
         }
 
         private Hazards hazards;
 
         void render(Graphics2D g, int w, int h, Hazards hazards) {
+            renderScene(g, w, h, hazards);
+            if (paused) pauseDialog.render(g, w, h);
+        }
+
+        private void renderScene(Graphics2D g, int w, int h, Hazards hazards) {
             this.hazards = hazards;
             double t = clockMs();
             switch (phase) {
@@ -674,7 +722,7 @@ public final class GameMain {
                         stopInterludeMusic();
                         phase = Phase.SONG3;
                         leadIn = true;
-                        leadStartNano = System.nanoTime();
+                        leadStartNano = PauseClock.nano();
                     }
                 }
                 case SONG3 -> {

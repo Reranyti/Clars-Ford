@@ -47,7 +47,7 @@ final class Interlude {
     private final GlitchBackdrop backdrop = new GlitchBackdrop();
     private BufferedImage fakeDesktop;
 
-    private long startNano = System.nanoTime();
+    private long startNano = PauseClock.nano();
     private double meter;
     private double lastFrame, lastPress = -1e9, winAt = -1, failAt = -1;
 
@@ -73,11 +73,11 @@ final class Interlude {
 
     /** Starts the scene as if it had been running for the given number of seconds (to try a later part). */
     void seek(double seconds) {
-        startNano = System.nanoTime() - (long) (seconds * 1e9);
+        startNano = PauseClock.nano() - (long) (seconds * 1e9);
     }
 
     private double now() {
-        return (System.nanoTime() - startNano) / 1e6;
+        return (PauseClock.nano() - startNano) / 1e6;
     }
 
     private static double smooth(double x) {

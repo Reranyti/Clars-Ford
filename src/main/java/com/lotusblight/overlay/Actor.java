@@ -46,7 +46,7 @@ final class Actor {
     private final double[][] curl = new double[2][5], curlVel = new double[2][5];
     private boolean primed;
     private long lastNano;
-    private final long born = System.nanoTime();
+    private final long born = PauseClock.nano();
 
     Actor(int[] skin, boolean honcho) {
         this.rig = honcho ? Rig15.honcho() : Rig15.standard();
@@ -104,7 +104,7 @@ final class Actor {
 
     /** Ends the frame: the hands are shaped, the trailing parts follow, and the figure is drawn with its feet at the origin given. */
     void draw(SoftRenderer r, double scale, double originX, double originY) {
-        long now = System.nanoTime();
+        long now = PauseClock.nano();
         double dt = primed ? Math.min(0.05, (now - lastNano) / 1e9) : 0;
         lastNano = now;
         double t = (now - born) / 1e9;

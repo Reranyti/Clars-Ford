@@ -53,7 +53,7 @@ final class Finale3 {
     private final Actor[] rigs;
     private final SoftRenderer[] figures = new SoftRenderer[2];
     private final double unit;
-    private final long startNano = System.nanoTime();
+    private final long startNano = PauseClock.nano();
     private double seekMs;
 
     Finale3(int[] glitcherSkin, int[] honchoSkin, BufferedImage desktop, int screenH) {
@@ -67,11 +67,11 @@ final class Finale3 {
 
     /** Starts the scene at a given second (for previewing). */
     void seek(double seconds) {
-        seekMs = seconds * 1000 - (System.nanoTime() - startNano) / 1e6;
+        seekMs = seconds * 1000 - (PauseClock.nano() - startNano) / 1e6;
     }
 
     private double now() {
-        return (System.nanoTime() - startNano) / 1e6 + seekMs;
+        return (PauseClock.nano() - startNano) / 1e6 + seekMs;
     }
 
     private static double length() {

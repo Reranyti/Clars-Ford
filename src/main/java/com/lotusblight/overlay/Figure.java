@@ -39,7 +39,7 @@ final class Figure {
 
     /** Draws the pose with its feet at (originX, originY); {@code scale} is image pixels per skin pixel. */
     void draw(SoftRenderer r, SoftRenderer.Pose legacy, double scale, double originX, double originY) {
-        long now = System.nanoTime();
+        long now = PauseClock.nano();
         double dt = primed ? (now - lastNano) / 1e9 : 0;
         lastNano = now;
         draw(r, legacy, scale, originX, originY, dt);

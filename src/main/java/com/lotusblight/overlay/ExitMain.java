@@ -31,8 +31,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * The exit, from the error dialog to the fight. Windows are minimized first (and brought back however
  * the process ends) so the desktop is in view, it is looked at once for the icons, and then ExitScene
- * plays over it; when the scene is done the fight (GameMain) starts in this same process. Esc or
- * Alt+F4 end it at any point.
+ * plays over it; when the scene is done the fight (GameMain) starts in this same process. There is no Esc in the scene;
+ * Alt+F4 ends it.
  *
  * Usage: java -cp lotusblight.jar com.lotusblight.overlay.ExitMain [--jar lotusblight-VERSION.jar]
  *        [--song1 a.wav] [--song2 b.wav] [--song3 d.wav] [--contact c.wav] [--frames DIR --animAudio a.wav --animFps N]
@@ -161,12 +161,7 @@ public final class ExitMain {
         };
         canvas.addMouseListener(mouse);
         canvas.addMouseMotionListener(mouse);
-        frame.addKeyListener(new KeyAdapter() {
-            @Override
-            public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_ESCAPE) System.exit(0);
-            }
-        });
+        // No Esc here: the Glitcher's scene cannot be left (on purpose, it is a key scene); Alt+F4 still closes the window.
         frame.setContentPane(canvas);
         frame.setVisible(true);
         frame.toFront();
