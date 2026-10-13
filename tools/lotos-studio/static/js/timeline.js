@@ -18,14 +18,18 @@ MD.timeline = d => {
     ...marks.flatMap((m, i) => {
       const end = i + 1 < marks.length ? marks[i + 1].t : d.track.duration || m.t;
       return [`## ${tlFmt(m.t)} – ${tlFmt(end)}  ${m.title || "(без названия)"}  [${(TL_KINDS[m.kind] || TL_KINDS.other)[0]}]`, "", m.text || "", ""];
-    })].join("\n");
+    }),
+    `## Нажатия пробела (${(d.taps || []).length})`, "",
+    "_Время в миллисекундах от начала трека, по одному на строку (как файл записи бита в бою)._", "",
+    ...[...(d.taps || [])].sort((a, b) => a - b).map(t => String(Math.round(t * 1000)))].join("\n");
 };
 
 registerPage("timeline", {
   title: "Шкала трека", icon: "pulse", group: "Работа", order: 3,
   async render(root) {
     const d = await Docs.get("timeline"), save = () => Docs.save("timeline");
-    const audio = new Audio(); let peaks = null, zoom = 1, scroll = 0, sel = null, url = null;
+    d.taps = d.taps || [];
+    const audio = new Audio(); let peaks = null, zoom = 1, scroll = 0, sel = null, url = null, rec = false, flash = 0;
     onLeave(() => { audio.pause(); if (url) URL.revokeObjectURL(url); });
     const dur = () => audio.duration && isFinite(audio.duration) ? audio.duration : d.track.duration || 420;
 
@@ -62,6 +66,13 @@ registerPage("timeline", {
         g.fillStyle = c; g.fillRect(x, 14, 2, hh - 14); g.fillRect(x, hh - 20, Math.min(160, g.measureText(m.title || "").width + 10), 18);
         g.fillStyle = "#07060d"; g.fillText(m.title || "", x + 5, hh - 17);
       }
+      for (const t of d.taps) {
+        const x = xOf(t, v); if (x < -4 || x > w + 4) continue;
+        g.fillStyle = "#ffffff"; g.beginPath(); g.arc(x, 30, 4, 0, 7); g.fill();
+        g.fillStyle = "rgba(255,255,255,.22)"; g.fillRect(x, 34, 1, hh - 60);
+      }
+      if (rec) { g.fillStyle = "#f87171"; g.beginPath(); g.arc(w - 16, 16, 6, 0, 7); g.fill(); g.font = "11px sans-serif"; g.fillText("ЗАПИСЬ ПРОБЕЛА", w - 130, 10); }
+      if (performance.now() - flash < 140) { g.strokeStyle = "#fff"; g.lineWidth = 3; g.strokeRect(1, 1, w - 2, hh - 2); }
       const px = xOf(audio.currentTime || 0, v); g.fillStyle = "#fff"; g.fillRect(px, 0, 2, hh);
       clock.textContent = tlFmt(audio.currentTime || 0);
     };
@@ -83,6 +94,9 @@ registerPage("timeline", {
       if (!d.marks.length) list.append(h("div", { class: "muted" }, "Отметок нет. Встань на нужное время и нажми «Отметка здесь» (клавиша M)."));
     };
     const addMark = (t, title = "", kind = "other") => { const m = { id: uid(), t, title, kind, text: "" }; d.marks.push(m); sel = m; save(); drawList(); };
+    const tapNote = h("span", { class: "muted" });
+    const tapInfo = () => { tapNote.textContent = `Нажатий: ${d.taps.length}`; };
+    const recBtn = h("button", { class: "btn", onclick: () => { rec = !rec; recBtn.classList.toggle("primary", rec); recBtn.textContent = rec ? "Запись пробела: ВКЛ" : "Запись пробела"; if (rec && audio.paused) toast("Пробел запустит трек, дальше каждое нажатие ляжет точкой", "ok"); } }, "Запись пробела");
     const toggle = () => { if (audio.paused) audio.play(); else audio.pause(); };
 
     const pick = h("input", { type: "file", accept: "audio/*,.ogg", style: "display:none", onchange: async e => {
@@ -98,9 +112,19 @@ registerPage("timeline", {
     } });
     canvas.addEventListener("mousedown", e => {
       const v = view(), r = canvas.getBoundingClientRect(), x = e.clientX - r.left;
+      const y = e.clientY - r.top, tap = y < 44 ? d.taps.find(t => Math.abs(xOf(t, v) - x) < 6) : undefined;
+      if (tap !== undefined) {
+        const i = d.taps.indexOf(tap), mv = ev => { d.taps[i] = Math.max(0, Math.min(dur(), tOf(ev.clientX - r.left, v))); };
+        const up = () => { removeEventListener("mousemove", mv); removeEventListener("mouseup", up); save(); tapInfo(); };
+        addEventListener("mousemove", mv); addEventListener("mouseup", up); return;
+      }
       const near = d.marks.find(m => Math.abs(xOf(m.t, v) - x) < 6);
       if (near) { sel = near; const mv = ev => { near.t = Math.max(0, Math.min(dur(), tOf(ev.clientX - r.left, v))); }; const up = () => { removeEventListener("mousemove", mv); removeEventListener("mouseup", up); save(); drawList(); }; addEventListener("mousemove", mv); addEventListener("mouseup", up); }
       else audio.currentTime = Math.max(0, Math.min(dur(), tOf(x, v)));
+    });
+    canvas.addEventListener("dblclick", e => {
+      const v = view(), r = canvas.getBoundingClientRect(), x = e.clientX - r.left, i = d.taps.findIndex(t => Math.abs(xOf(t, v) - x) < 6);
+      if (i >= 0 && e.clientY - r.top < 44) { d.taps.splice(i, 1); save(); tapInfo(); }
     });
     canvas.addEventListener("wheel", e => {
       e.preventDefault(); const v = view(), r = canvas.getBoundingClientRect(), tc = tOf(e.clientX - r.left, v);
@@ -109,7 +133,13 @@ registerPage("timeline", {
     }, { passive: false });
     const keys = e => {
       if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || "")) return;
-      if (e.code === "Space") { e.preventDefault(); toggle(); }
+      if (e.code === "Space") {
+        e.preventDefault(); if (e.repeat) return;
+        if (!rec) toggle();
+        else if (audio.paused) audio.play();
+        else { d.taps.push(Math.round(audio.currentTime * 1000) / 1000); flash = performance.now(); save(); tapInfo(); }
+      }
+      else if (rec && e.key === "Backspace") { d.taps.pop(); save(); tapInfo(); }
       else if (e.key.toLowerCase() === "m") addMark(Math.round((audio.currentTime || 0) * 10) / 10);
       else if (e.key === "ArrowLeft") audio.currentTime = Math.max(0, audio.currentTime - (e.shiftKey ? 5 : 1));
       else if (e.key === "ArrowRight") audio.currentTime = Math.min(dur(), audio.currentTime + (e.shiftKey ? 5 : 1));
@@ -122,11 +152,14 @@ registerPage("timeline", {
           h("button", { class: "btn", onclick: toggle }, "▶ / ❚❚  (Пробел)"), clock,
           h("button", { class: "btn", onclick: () => addMark(Math.round((audio.currentTime || 0) * 10) / 10) }, "Отметка здесь (M)"),
           h("button", { class: "btn sm", onclick: () => { zoom = 1; scroll = 0; } }, "весь трек")),
+        h("div", { class: "row", style: "margin-top:8px" }, recBtn, tapNote,
+          h("button", { class: "btn sm", onclick: () => copyText([...d.taps].sort((a, b) => a - b).map(t => Math.round(t * 1000)).join("\n")) }, "Скопировать (мс)"),
+          h("button", { class: "btn sm danger", onclick: async () => { if (d.taps.length && await confirmBox("Стереть все " + d.taps.length + " нажатий?")) { d.taps.length = 0; save(); tapInfo(); } } }, "Стереть все")),
         info, h("div", { style: "margin-top:10px" }, canvas),
-        h("div", { class: "muted small", style: "margin-top:6px" }, "Клик по волне: перемотка. Перетащи отметку, чтобы сдвинуть. Колесо: прокрутка, Ctrl+колесо: масштаб. Стрелки: ±1 с (Shift: ±5 с). Файл трека остаётся в браузере: после перезагрузки страницы выбери его снова, отметки сохранены.")),
+        h("div", { class: "muted small", style: "margin-top:6px" }, "Клик по волне: перемотка. Перетащи отметку, чтобы сдвинуть. Колесо: прокрутка, Ctrl+колесо: масштаб. Стрелки: ±1 с (Shift: ±5 с). В записи пробела: Backspace стирает последнее нажатие, точку можно перетащить, двойной клик по ней удаляет. Файл трека остаётся в браузере: после перезагрузки страницы выбери его снова, отметки сохранены.")),
       h("div", { class: "card" }, h("h2", {}, "Отметки"), list,
         h("div", { class: "muted small" }, "Сохраняется само в ", h("code", {}, "art/episodes/meta_line_timeline.md"), ". Каждая отметка длится до следующей.")));
-    drawList();
+    drawList(); tapInfo();
     if (d.track.name) info.textContent = `Последний трек: ${d.track.name} (${tlFmt(d.track.duration || 0)}). Выбери файл снова, чтобы слышать и видеть волну.`;
   },
 });
