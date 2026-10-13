@@ -76,7 +76,7 @@ registerPage("timeline", {
       const px = xOf(audio.currentTime || 0, v); g.fillStyle = "#fff"; g.fillRect(px, 0, 2, hh);
       clock.textContent = tlFmt(audio.currentTime || 0);
     };
-    let raf = 0; const loop = () => { if (!document.body.contains(canvas)) return; draw(); raf = requestAnimationFrame(loop); }; loop(); onLeave(() => cancelAnimationFrame(raf));
+    let raf = 0; const loop = () => { if (!document.body.contains(canvas)) return; draw(); raf = requestAnimationFrame(loop); }; raf = requestAnimationFrame(loop); onLeave(() => cancelAnimationFrame(raf));
 
     const drawList = () => {
       list.innerHTML = "";
