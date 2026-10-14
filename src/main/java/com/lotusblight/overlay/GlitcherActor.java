@@ -40,7 +40,7 @@ final class GlitcherActor {
     static final double DISSOLVE_MS = 3_500;
 
     private static final double LEG_ROLL = -0.9;
-    private static final double SS = 1.5;          // drawn this many times larger, then scaled down smooth
+    private final double ss;                       // drawn this many times larger, then scaled down smooth (less on a big screen: the figure is a great many pixels there)
     private static final int RIGHT_ARM = SkinModel.Part.RIGHT_ARM.ordinal();
     private static final int LEFT_ARM = SkinModel.Part.LEFT_ARM.ordinal();
     private static final int RIGHT_LEG = SkinModel.Part.RIGHT_LEG.ordinal();
@@ -57,7 +57,8 @@ final class GlitcherActor {
     GlitcherActor(int[] skin, int screenH) {
         this.skin = skin;
         this.unit = screenH * 0.40 / 32.0;
-        double u = unit * SS;
+        this.ss = 1.5;
+        double u = unit * ss;
         this.actor = new Actor(skin, false);
         this.renderer = new SoftRenderer((int) (52 * u), (int) (46 * u));
         this.ox = renderer.width / 2.0;
@@ -176,8 +177,8 @@ final class GlitcherActor {
             shakeY += (jitter.nextDouble() - 0.5) * 20 * f;
         }
 
-        renderer.clear();
-        actor.draw(renderer, unit * SS, ox, oy);
+        renderer.clearDirty();
+        actor.draw(renderer, unit * ss, ox, oy);
 
         Graphics2D b = (Graphics2D) g.create();
         b.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
@@ -191,7 +192,7 @@ final class GlitcherActor {
         }
         AffineTransform base = b.getTransform();
         b.translate(px, py);
-        b.scale(scale / SS, scale / SS);
+        b.scale(scale / ss, scale / ss);
         double dissolve = Math.max(0, Math.min(1, (ms - DISSOLVE_FROM) / DISSOLVE_MS));
         double burst = glitchBurst(ms, Math.max(anger, stare), lev);
         if (dissolve > 0) {
@@ -203,7 +204,7 @@ final class GlitcherActor {
             int sh = renderer.height / strips + 1;
             for (int i = 0; i < strips; i++) {
                 int y = i * sh;
-                int dx = (int) ((rnd.nextDouble() - 0.5) * 2 * unit * SS * 3.5 * burst);
+                int dx = (int) ((rnd.nextDouble() - 0.5) * 2 * unit * ss * 3.5 * burst);
                 b.drawImage(renderer.image, (int) -ox + dx, (int) -oy + y, (int) -ox + dx + renderer.width, (int) -oy + y + sh,
                         0, y, renderer.width, Math.min(renderer.height, y + sh), null);
             }
@@ -212,7 +213,7 @@ final class GlitcherActor {
             if (ms > RETURN_MS + 1500 && lev < 0.2) {
                 for (int i = 2; i >= 1; i--) {
                     b.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, 0.2f / i));
-                    b.drawImage(renderer.image, (int) -ox - (int) (heading * unit * SS * 4 * i), (int) -oy, null);
+                    b.drawImage(renderer.image, (int) -ox - (int) (heading * unit * ss * 4 * i), (int) -oy, null);
                 }
                 b.setComposite(java.awt.AlphaComposite.SrcOver);
             }
@@ -293,7 +294,7 @@ final class GlitcherActor {
                 int mx = Math.min(renderer.width - 1, tx + tile / 2), my = Math.min(renderer.height - 1, ty + tile / 2);
                 if ((renderer.image.getRGB(mx, my) >>> 24) == 0) continue;
                 double local = Math.max(0, Math.min(1, (d - delay * 0.55) / 0.45));
-                double ox2 = vx * 700 * local * SS, oy2 = (-vy * 500 * local + 900 * local * local) * SS * 0.4;
+                double ox2 = vx * 700 * local * ss, oy2 = (-vy * 500 * local + 900 * local * local) * ss * 0.4;
                 float alpha = (float) Math.max(0, 1 - local * local);
                 if (alpha <= 0) continue;
                 b.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, alpha));
@@ -426,15 +427,15 @@ final class GlitcherActor {
             }
         }
         if (walking < 0.2) a.blendTurn(Rig15.Joint.HEAD, 8, 0, 0, 1 - walking / 0.2);      // just formed: a little dazed
-        renderer.clear();
-        actor.draw(renderer, unit * SS, ox, oy);
+        renderer.clearDirty();
+        actor.draw(renderer, unit * ss, ox, oy);
 
         Graphics2D b = (Graphics2D) g.create();
         b.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
         b.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         AffineTransform base = b.getTransform();
         b.translate(x, groundY);
-        b.scale(scale / SS, scale / SS);
+        b.scale(scale / ss, scale / ss);
         if (whole < 1) drawDissolving(b, 1 - whole);
         else b.drawImage(renderer.image, (int) -ox, (int) -oy, null);
         b.setTransform(base);

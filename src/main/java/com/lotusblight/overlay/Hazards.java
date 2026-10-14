@@ -222,7 +222,26 @@ final class Hazards {
      * has drawn away, the screen goes to a starry dark with a black disc and a single eye in it, streaks
      * winding into it, watching the game - and the cursor.
      */
+    private boolean aeroWarmStarted;
+
+    /** Paints both wallpapers off to the side while the song begins, so that neither is made in the middle of a frame. */
+    private void warmAero(int w, int h) {
+        if (aeroWarmStarted) return;
+        aeroWarmStarted = true;
+        Thread th = new Thread(() -> {
+            for (int v = 0; v < 2; v++) {
+                BufferedImage img = AeroWallpaper.paint(w, h, v);
+                synchronized (aeroPics) {
+                    if (aeroPics[v] == null) aeroPics[v] = img;
+                }
+            }
+        }, "aero-warm");
+        th.setDaemon(true);
+        th.start();
+    }
+
     void renderBack(Graphics2D g, int w, int h, double timeMs) {
+        warmAero(w, h);
         drawAero(g, w, h, timeMs);
         drawWatchers(g, w, h, timeMs);
         actor.renderAnger(g, w, h, timeMs);
@@ -380,34 +399,51 @@ final class Hazards {
                 double ang = j * Math.PI * 2 / PER_RING + stagger + spin + (e[2] * 0.02);
                 double x = cx + Math.cos(ang) * r;
                 double y = cy + Math.sin(ang) * r;
+                if (x < -len * 1.2 || x > w + len * 1.2 || y < -len * 1.2 || y > h + len * 1.2) continue;      // wholly off the screen
                 double sc = len * 1.02 * (0.94 + 0.12 * e[3]) / eyeSprite.getWidth();
                 double tilt = ang + Math.PI / 2 + e[2] * 0.08;
                 // A slow blink, each eye on its own time.
                 double bl = (t * 0.27 + e[0] * 0.16) % 1.0;
                 double lid = bl < 0.05 ? Math.abs(bl / 0.05 - 0.5) * 2 : 1;
-                b.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, (float) (k * depth)));
+                double ea = k * depth;
+                b.setComposite(ea >= 0.995 ? java.awt.AlphaComposite.SrcOver : java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, (float) ea));
                 java.awt.geom.AffineTransform old = b.getTransform();
                 b.translate(x, y);
                 b.rotate(tilt);
                 b.scale(sc, sc * (0.15 + 0.85 * lid));
-                b.drawImage(eyeSprite, -eyeSprite.getWidth() / 2, -eyeSprite.getHeight() / 2, null);
-                // The pupil looks at the middle: inwards along the eye's own y axis.
-                if (lid > 0.5) {
-                    b.setColor(new Color(255, 255, 255, 235));
-                    b.fillOval(-11, 6 - 11, 22, 22);
-                    b.setColor(new Color(0x9A, 0x90, 0x30, 200));
-                    b.fillOval(-13, 4 - 4, 10, 10);
-                }
+                // The pupil looks at the middle: inwards along the eye's own y axis. It is part of the open eye's picture.
+                BufferedImage pic = lid > 0.5 ? openEye() : eyeSprite;
+                b.drawImage(pic, -pic.getWidth() / 2, -pic.getHeight() / 2, null);
                 b.setTransform(old);
             }
         }
         b.dispose();
     }
 
+    private BufferedImage openEyeSprite;
+
+    /** The eye with its pupil, made once: two oval fills per eye per frame, a few hundred eyes, was the most expensive thing on the screen. */
+    private BufferedImage openEye() {
+        if (openEyeSprite == null) {
+            BufferedImage im = new BufferedImage(eyeSprite.getWidth(), eyeSprite.getHeight(), BufferedImage.TYPE_INT_ARGB_PRE);
+            Graphics2D pg = im.createGraphics();
+            pg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            pg.drawImage(eyeSprite, 0, 0, null);
+            int cx = im.getWidth() / 2, cy = im.getHeight() / 2;
+            pg.setColor(new Color(255, 255, 255, 235));
+            pg.fillOval(cx - 11, cy + 6 - 11, 22, 22);
+            pg.setColor(new Color(0x9A, 0x90, 0x30, 200));
+            pg.fillOval(cx - 13, cy + 4 - 4, 10, 10);
+            pg.dispose();
+            openEyeSprite = im;
+        }
+        return openEyeSprite;
+    }
+
     /** One eye outline, doubled with a pink and an olive ghost like a badly printed page. */
     static BufferedImage makeEyeSprite() {
         int sw = 200, sh = 100;
-        BufferedImage img = new BufferedImage(sw, sh, BufferedImage.TYPE_INT_ARGB);
+        BufferedImage img = new BufferedImage(sw, sh, BufferedImage.TYPE_INT_ARGB_PRE);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         java.awt.geom.Path2D.Double almond = new java.awt.geom.Path2D.Double();

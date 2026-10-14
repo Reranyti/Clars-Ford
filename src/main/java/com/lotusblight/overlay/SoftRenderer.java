@@ -36,14 +36,14 @@ final class SoftRenderer {
     final int height;
     final BufferedImage image;
     final int[] pixels;
-    private final double[] depth;
+    private final float[] depth;
 
     SoftRenderer(int width, int height) {
         this.width = width;
         this.height = height;
         this.image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         this.pixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
-        this.depth = new double[width * height];
+        this.depth = new float[width * height];
     }
 
     /** The colour of the light: what the lit side is multiplied by, and what the shadowed side keeps. 1,1,1 is the plain look. */
@@ -54,7 +54,32 @@ final class SoftRenderer {
 
     void clear() {
         Arrays.fill(pixels, 0);
-        Arrays.fill(depth, Double.NEGATIVE_INFINITY);
+        Arrays.fill(depth, Float.NEGATIVE_INFINITY);
+        bx0 = width;
+        by0 = height;
+        bx1 = -1;
+        by1 = -1;
+    }
+
+    private boolean everCleared;
+
+    /**
+     * Clears only what was drawn since the last clear (the box the triangles touched), for a renderer that nothing else writes into:
+     * the buffer is large and the figure usually fills a part of it.
+     */
+    void clearDirty() {
+        if (!everCleared) {
+            clear();
+            everCleared = true;
+            return;
+        }
+        if (bx1 >= bx0) {
+            for (int y = by0; y <= by1; y++) {
+                int row = y * width;
+                Arrays.fill(pixels, row + bx0, row + bx1 + 1, 0);
+                Arrays.fill(depth, row + bx0, row + bx1 + 1, Float.NEGATIVE_INFINITY);
+            }
+        }
         bx0 = width;
         by0 = height;
         bx1 = -1;
@@ -156,19 +181,38 @@ final class SoftRenderer {
         double dx0 = -(c[1] - b[1]) * invArea, dy0 = (c[0] - b[0]) * invArea;
         double dx1 = -(a[1] - c[1]) * invArea, dy1 = (a[0] - c[0]) * invArea;
         double w0row = edge(b, c, minX + 0.5, minY + 0.5) * invArea, w1row = edge(c, a, minX + 0.5, minY + 0.5) * invArea;
+        double dx2 = -(dx0 + dx1);
+        int span = maxX - minX;
         for (int y = minY; y <= maxY; y++, w0row += dy0, w1row += dy1) {
-            double w0 = w0row, w1 = w1row;
-            for (int x = minX; x <= maxX; x++, w0 += dx0, w1 += dx1) {
+            // The three weights are straight lines along the row: where all of them are non-negative is one run of pixels, found
+            // directly instead of testing every pixel of the triangle's box.
+            double w2row = 1 - w0row - w1row;
+            int lo = 0, hi = span;
+            if (dx0 > 1e-12) lo = Math.max(lo, (int) Math.ceil(-w0row / dx0));
+            else if (dx0 < -1e-12) hi = Math.min(hi, (int) Math.floor(-w0row / dx0));
+            else if (w0row < 0) continue;
+            if (dx1 > 1e-12) lo = Math.max(lo, (int) Math.ceil(-w1row / dx1));
+            else if (dx1 < -1e-12) hi = Math.min(hi, (int) Math.floor(-w1row / dx1));
+            else if (w1row < 0) continue;
+            if (dx2 > 1e-12) lo = Math.max(lo, (int) Math.ceil(-w2row / dx2));
+            else if (dx2 < -1e-12) hi = Math.min(hi, (int) Math.floor(-w2row / dx2));
+            else if (w2row < 0) continue;
+            lo = Math.max(0, lo - 1);                  // the run is a guess to a pixel; the exact test below decides the edges
+            hi = Math.min(span, hi + 1);
+            for (int xi = lo; xi <= hi; xi++) {
+                int x = minX + xi;
+                double w0 = w0row + dx0 * xi, w1 = w1row + dx1 * xi;
                 double w2 = 1 - w0 - w1;
                 if (w0 < 0 || w1 < 0 || w2 < 0) continue;
                 double z = w0 * a[2] + w1 * b[2] + w2 * c[2];
                 int i = y * width + x;
-                if (z <= depth[i]) continue;
+                float zf = (float) z;
+                if (zf <= depth[i]) continue;
                 int u = clamp((int) Math.floor(w0 * ta[0] + w1 * tb[0] + w2 * tc[0]), uMin, uMax);
                 int v = clamp((int) Math.floor(w0 * ta[1] + w1 * tb[1] + w2 * tc[1]), vMin, vMax);
                 int texel = skin[v * 64 + u];
                 if ((texel >>> 24) < 128) continue;
-                depth[i] = z;
+                depth[i] = zf;
                 pixels[i] = shade(texel, light);
                 if (x < bx0) bx0 = x;
                 if (x > bx1) bx1 = x;
