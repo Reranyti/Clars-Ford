@@ -187,6 +187,8 @@ final class GlitcherActor {
         b.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
         b.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         double px = x + shakeX, py = footY + shakeY;
+        drawAura(b, px, py - unit * 17 * scale, unit * 27 * scale, aeroAmt, eyesAmt, anger, ms);
+        if (walk > 0.5 && lev < 0.3) drawFootDust(b, px, groundY, heading, phase);
         if (lev < 1) {
             double sr = unit * 9 * scale;
             b.setPaint(new RadialGradientPaint((float) px, (float) (groundY + unit * 0.6), (float) sr, new float[]{0f, 1f},
@@ -230,6 +232,85 @@ final class GlitcherActor {
         drawCarried(g, w, h, ms, x, footY, scale, heading, icons, spots);
         drawThrown(g, w, h, ms, x, groundY, scale, icons);
         drawStompFx(g, w, h, ms, px, groundY);
+        drawThrowCharge(g, ms, x + heading * unit * 6 * scale, footY - unit * 20 * scale);
+        drawGrabSparkles(g, ms, x - unit * 5, footY - unit * 14);
+    }
+
+    /** A soft light behind him that sets him off from the picture: its colour follows the phase of the song. */
+    private void drawAura(Graphics2D b, double cx, double cy, double r, double aero, double eyes, double anger, double ms) {
+        double[] c = {110, 130, 255};
+        c = mix(c, new double[]{255, 215, 140}, aero);
+        c = mix(c, new double[]{160, 110, 255}, eyes);
+        c = mix(c, new double[]{255, 60, 80}, anger);
+        double breath = 0.8 + 0.2 * Math.sin(ms / 1000.0 * (1.6 + 3 * anger));
+        int a = (int) Math.min(255, (58 + 70 * anger + 20 * eyes) * breath);
+        b.setPaint(new RadialGradientPaint((float) cx, (float) cy, (float) r, new float[]{0f, 1f},
+                new Color[]{new Color((int) c[0], (int) c[1], (int) c[2], a), new Color((int) c[0], (int) c[1], (int) c[2], 0)}));
+        b.fill(new java.awt.geom.Ellipse2D.Double(cx - r, cy - r, r * 2, r * 2));
+    }
+
+    /** A puff kicked up at each footfall, drifting back and fading. */
+    private void drawFootDust(Graphics2D b, double px, double groundY, double heading, double phase) {
+        BufferedImage sprite = puff();
+        double stepF = phase / Math.PI;
+        for (int back = 0; back < 2; back++) {
+            double steps = Math.floor(stepF) - back;
+            double age = stepF - steps;                                     // 0..1 (+1 for the one before)
+            if (age < 0 || age > 1.6) continue;
+            double fade = 1 - age / 1.6;
+            double size = unit * (1.6 + 2.2 * age);
+            double x = px - heading * unit * (1.5 + 3.5 * age) + ((long) steps % 2 == 0 ? -1 : 1) * unit * 1.4;
+            double y = groundY - size * 0.25 - unit * 1.5 * age;
+            b.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, (float) (0.32 * fade)));
+            b.drawImage(sprite, (int) (x - size), (int) (y - size), (int) (size * 2), (int) (size * 2), null);
+        }
+        b.setComposite(java.awt.AlphaComposite.SrcOver);
+    }
+
+    /** The wind-up of a throw: a light gathers in his hand, and bursts as the icon is let go. */
+    private void drawThrowCharge(Graphics2D g, double ms, double hx, double hy) {
+        double tp = throwProgress(ms);
+        if (tp < 0 || tp > 800) return;
+        Graphics2D b = (Graphics2D) g.create();
+        b.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        double charge = Math.min(1, tp / 640.0);
+        double r = unit * (1.2 + 3.2 * charge * charge);
+        b.setPaint(new RadialGradientPaint((float) hx, (float) hy, (float) r, new float[]{0f, 1f},
+                new Color[]{new Color(255, 255, 255, (int) (200 * charge)), new Color(160, 110, 255, 0)}));
+        b.fill(new java.awt.geom.Ellipse2D.Double(hx - r, hy - r, r * 2, r * 2));
+        if (tp >= 640) {
+            double f = (tp - 640) / 160.0;
+            double rr = unit * (3 + 7 * f);
+            b.setStroke(new BasicStroke((float) (3 * (1 - f) + 1)));
+            b.setColor(new Color(255, 255, 255, (int) (220 * (1 - f))));
+            b.draw(new java.awt.geom.Ellipse2D.Double(hx - rr, hy - rr, rr * 2, rr * 2));
+        }
+        b.dispose();
+    }
+
+    /** Sparks as he picks an icon off the edge. */
+    private void drawGrabSparkles(Graphics2D g, double ms, double cx, double cy) {
+        for (double gt : GRABS) {
+            double age = ms - gt;
+            if (age < -150 || age > 650) continue;
+            Graphics2D b = (Graphics2D) g.create();
+            b.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            double f = Math.max(0, age) / 650.0, fade = 1 - f;
+            Random rnd = new Random((long) gt);
+            for (int i = 0; i < 9; i++) {
+                double ang = rnd.nextDouble() * Math.PI * 2, dist = unit * (2 + 7 * rnd.nextDouble()) * (0.3 + f);
+                double sx = cx + Math.cos(ang) * dist, sy = cy + Math.sin(ang) * dist - unit * 2 * f;
+                double sz = unit * (0.5 + 0.9 * rnd.nextDouble()) * (1 - 0.5 * f);
+                b.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                b.setColor(new Color(255, 236, 160, (int) (230 * fade)));
+                b.draw(new java.awt.geom.Line2D.Double(sx - sz, sy, sx + sz, sy));
+                b.draw(new java.awt.geom.Line2D.Double(sx, sy - sz, sx, sy + sz));
+                b.setColor(new Color(255, 255, 255, (int) (200 * fade)));
+                b.draw(new java.awt.geom.Line2D.Double(sx - sz * 0.5, sy - sz * 0.5, sx + sz * 0.5, sy + sz * 0.5));
+                b.draw(new java.awt.geom.Line2D.Double(sx - sz * 0.5, sy + sz * 0.5, sx + sz * 0.5, sy - sz * 0.5));
+            }
+            b.dispose();
+        }
     }
 
     private static double[] mix(double[] a, double[] b, double t) {
@@ -338,8 +419,7 @@ final class GlitcherActor {
             b.setColor(new Color(255, 255, 255, (int) (150 * (1 - age / 170.0))));
             b.fillRect(0, 0, w, h);
         }
-        floorRing(b, fx, fy, age / 950.0, w * 0.7, 0.16, w, h);
-        floorRing(b, fx, fy, (age - 130) / 950.0, w * 0.5, 0.16, w, h);
+        floorRing(b, fx, fy, (age - 160) / 950.0, w * 0.5, 0.16, w, h);
         BufferedImage sprite = puff();
         Random r = new Random(77);
         double s = age / 1000.0;
@@ -698,6 +778,25 @@ final class GlitcherActor {
             }
             b.dispose();
         }
+        // The eyes let go (1:44): a violet flash and rings of light going out from the middle.
+        double rt = ms - RETURN_MS;
+        if (rt >= 0 && rt < 1500) {
+            Graphics2D b = (Graphics2D) g.create();
+            b.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            if (rt < 420) {
+                b.setColor(new Color(190, 150, 255, (int) (150 * (1 - rt / 420.0))));
+                b.fillRect(0, 0, w, h);
+            }
+            for (int i = 0; i < 2; i++) {
+                double r = (rt - i * 150) / 1200.0;
+                if (r <= 0 || r >= 1) continue;
+                double rad = Math.hypot(w, h) * 0.55 * (1 - (1 - r) * (1 - r));
+                b.setStroke(new BasicStroke((float) (10 * (1 - r) + 2)));
+                b.setColor(new Color(220, 190, 255, (int) (190 * (1 - r))));
+                b.draw(new java.awt.geom.Ellipse2D.Double(w / 2.0 - rad, h / 2.0 - rad, rad * 2, rad * 2));
+            }
+            b.dispose();
+        }
         // White flash at the moment it all goes.
         double f = ms - BLACKOUT_MS;
         if (f >= 0 && f < 500) {
@@ -711,6 +810,15 @@ final class GlitcherActor {
     /** A red creeping in at the edges as he gets angrier. */
     void renderAnger(Graphics2D g, int w, int h, double ms) {
         double anger = anger(ms);
+        double stareAmt = smooth((ms - STARE_FROM) / 2000.0) * (1 - smooth((ms - STARE_TO) / 1500.0));
+        if (stareAmt > 0.01) {
+            Graphics2D v = (Graphics2D) g.create();
+            double rr = Math.hypot(w, h) / 2;
+            v.setPaint(new RadialGradientPaint((float) (w / 2.0), (float) (h / 2.0), (float) rr, new float[]{0.4f, 1f},
+                    new Color[]{new Color(0, 0, 0, 0), new Color(0, 0, 0, (int) (170 * stareAmt))}));
+            v.fillRect(0, 0, w, h);
+            v.dispose();
+        }
         if (anger <= 0) return;
         double pulse = 0.65 + 0.35 * Math.sin(ms / 1000.0 * (4 + 6 * anger));
         int alpha = (int) (150 * anger * pulse);
