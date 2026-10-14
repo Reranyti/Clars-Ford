@@ -326,6 +326,7 @@ public final class GameMain {
     /** Drives the phases and owns the music clock for each one. */
     private static final class Engine {
         PhraseScreen phraseScreen;
+        private final ColumnsFx columns = new ColumnsFx();
         private final RhythmGame g1, g2;
         private final FinaleVideo anim;
         private final FakeWindows fakeWindows;
@@ -708,7 +709,10 @@ public final class GameMain {
                         bg.dispose();
                         ContactBreak.blit(g, glitchBuf, w, h, gl, t);
                     } else {
-                        contact.renderBackdrop(g, w, h, t);
+                        Graphics2D cam = cameraGraphics(g, w, h, t);
+                        contact.renderBackdrop(cam, w, h, t);
+                        if (recordFile == null) columns.render(cam, w, h, t);
+                        cam.dispose();
                         if (recordFile == null) contact.renderEye(g, w, h, t);
                         drawSong2(g, w, h, t);
                         if (phraseScreen != null && recordFile == null) phraseScreen.render(g, w, h, t);      // the words, on black, over everything
@@ -771,6 +775,19 @@ public final class GameMain {
         }
 
         /** The second song's picture: the film once it starts, otherwise circles under the fake windows. */
+        /** A copy of the graphics knocked over by the camera of the columns (a plain copy when there is none). */
+        private Graphics2D cameraGraphics(Graphics2D g, int w, int h, double t) {
+            Graphics2D c = (Graphics2D) g.create();
+            double[] cam = recordFile != null ? new double[]{0, 1} : columns.camera(t);
+            if (cam[0] != 0) {
+                c.translate(w / 2.0, h / 2.0);
+                c.rotate(cam[0]);
+                c.scale(cam[1], cam[1]);
+                c.translate(-w / 2.0, -h / 2.0);
+            }
+            return c;
+        }
+
         private void drawSong2(Graphics2D g, int w, int h, double t) {
             // From 2:15 the finale animation is the backdrop: it goes down first, the chorus
             // lyrics over it, and the circles with the HP bars on top of everything, so the fight
@@ -790,7 +807,11 @@ public final class GameMain {
                 g2.render(g, w, h, t);
                 // The torn-up backdrop is the Glitcher's windows while the eyes are on; no extra ones on top.
                 if (t < ContactBreak.START || t >= ANIM_START_MS - 1500) fakeWindows.render(g, w, h, t);
-                if (hazards != null) hazards.renderSong2(g, w, h, t);
+                if (hazards != null) {
+                    Graphics2D cam = cameraGraphics(g, w, h, t);
+                    hazards.renderSong2(cam, w, h, t);
+                    cam.dispose();
+                }
             }
         }
 

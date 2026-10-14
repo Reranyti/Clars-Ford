@@ -63,6 +63,11 @@ final class PhraseScreen {
         return out;
     }
 
+    /** The family of the plain sans Chinese face, for other things drawn in the same look. */
+    static String family() {
+        return wordsFont();
+    }
+
     private static String wordsFamily;
 
     /** The plain sans-serif Chinese face the original uses (Microsoft YaHei on Windows), else whatever the system has for it. */
