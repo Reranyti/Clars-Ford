@@ -103,7 +103,7 @@ final class GlitcherCloseup {
 
     /** Where the fist that holds the TV is ({x, y, width of the set}), or null while he is not there. */
     double[] hand(double ms, int h) {
-        if (!active(ms) || !haveFist) return null;
+        if (!active(ms) || !haveFist || SnakesFx.presenting(ms) < 0.02) return null;          // he carries the TV only while the snakes run
         return new double[]{fistX, fistY, h * 0.30};
     }
 
@@ -130,9 +130,12 @@ final class GlitcherCloseup {
         actor.viewYaw = 0;
         actor.viewPitch = 0;
         // the arm with the TV: up and out at chest height, bent
-        actor.reach(Rig15.Limb.L_ARM, 10.0, 20.0, 6.5, 1);
-        actor.shapeL = Actor.Hand.GRIP;
-        actor.fistL = 0.6;
+        double show = SnakesFx.presenting(ms);
+        if (show > 0.01) {
+            actor.reach(Rig15.Limb.L_ARM, 10.0, 20.0, 6.5, show);
+            actor.shapeL = show > 0.3 ? Actor.Hand.GRIP : Actor.Hand.LOOSE;
+            actor.fistL = 0.6 * show;
+        }
         // the pounding arm: raised, then down hard on the beat
         int li = lastHit(anim);
         double rr = 0.5;

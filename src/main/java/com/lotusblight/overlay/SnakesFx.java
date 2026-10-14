@@ -136,7 +136,7 @@ final class SnakesFx {
     void render(Graphics2D g, int w, int h, double ms, Hand hand) {
         // the set, in his hand for as long as he is there; it jerks in his fist while the snakes come out
         double[] fist = hand.at(ms);
-        if (fist != null) {
+        if (fist != null && presenting(ms) > 0.02) {
             double[] p = setPlace(fist, h);
             double jerk = 0;
             for (double m : marks) {

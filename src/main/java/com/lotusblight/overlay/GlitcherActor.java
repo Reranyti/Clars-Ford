@@ -645,7 +645,7 @@ final class GlitcherActor {
         double reform = smooth((ms - 800) / 5_000.0);
         double leave = smooth((ms - 73_500) / 3_500.0);
         double whole = Math.min(reform, 1 - leave);
-        whole = Math.min(whole, 1 - smooth((ms - 19_000) / 3_500.0));          // 0:19: the flat one comes apart, the solid one has come
+        if (ms >= 20_700) return;                                              // 0:19: the flat one fails (see drawFailure); the solid one has come
         if (whole <= 0) return;
         double walking = walking2(ms);
         double scale = 0.85;
@@ -662,13 +662,17 @@ final class GlitcherActor {
         double show = SnakesFx.presenting(ms);
         a.viewYaw *= 1 - show;
         // the arm with the TV: low by his side while he walks, up and out at chest height, bent, while he shows it
-        a.reach(Rig15.Limb.L_ARM, 6.0 + 3.5 * show, 13.0 + 7.5 * show, 4.5 + 1.5 * show, 1);
-        a.shapeL = Actor.Hand.GRIP;
-        a.fistL = 0.6;
+        if (show > 0.01) {                                                     // he carries the TV only while the snakes run
+            a.reach(Rig15.Limb.L_ARM, 6.0 + 3.5 * show, 13.0 + 7.5 * show, 4.5 + 1.5 * show, show);
+            a.shapeL = show > 0.3 ? Actor.Hand.GRIP : Actor.Hand.LOOSE;
+            a.fistL = 0.6 * show;
+        }
         if (show > 0.02) a.blendTurn(Rig15.Joint.HEAD, 4, 0, -5, show);
         if (walking < 0.2) a.blendTurn(Rig15.Joint.HEAD, 8, 0, 0, 1 - walking / 0.2);      // just formed: a little dazed
         renderer.clearDirty();
         actor.draw(renderer, unit * ss, ox, oy);
+        double failing = ms >= 19_000 && ms < 20_300 ? smooth((ms - 19_000) / 900.0) : 0;
+        if (failing > 0) failGlitch.apply(renderer.pixels, renderer.width, renderer.height, 0.25 + 0.7 * failing);
         if (actor.lastSkel != null) {                                          // where his right fist is, relative to his feet, in screen pixels
             double[] hp = actor.onScreen(actor.lastSkel.endPoint(Rig15.Limb.L_ARM));
             handDx = hp[0] * unit * scale;
@@ -681,11 +685,40 @@ final class GlitcherActor {
         AffineTransform base = b.getTransform();
         b.translate(x, groundY);
         b.scale(scale / ss, scale / ss);
-        if (whole < 1) drawDissolving(b, 1 - whole);
-        else b.drawImage(renderer.image, (int) -ox, (int) -oy, null);
+        if (ms < 20_300) {
+            if (whole < 1) drawDissolving(b, 1 - whole);
+            else b.drawImage(renderer.image, (int) -ox, (int) -oy, null);
+        }
         b.setTransform(base);
         b.dispose();
+        drawFailure(g, w, h, ms, x, groundY - unit * 15 * scale);
+    }
 
+    private final GlitchFx failGlitch = new GlitchFx();
+
+    /** 0:19: an error window comes up over the small copy while it tears; at 0:20.3 it is gone (a bright line where it stood), and the window stays a moment. */
+    private void drawFailure(Graphics2D g, int w, int h, double ms, double x, double cy) {
+        if (ms < 19_450 || ms >= 20_700) return;
+        Graphics2D d = (Graphics2D) g.create();
+        d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        String body = "\u0418\u0437\u043e\u0431\u0440\u0430\u0436\u0435\u043d\u0438\u0435 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e";
+        java.awt.Rectangle r = ExitScene.dialogFor(body, w, h, (int) x, (int) cy);
+        double pop = Math.min(1, (ms - 19_450) / 150.0);
+        double k = 0.5 + 0.5 * (1 - Math.pow(1 - pop, 3));
+        d.translate(r.getCenterX(), r.getCenterY());
+        d.scale(k, k);
+        d.translate(-r.getCenterX(), -r.getCenterY());
+        d.setFont(ExitScene.BASE_FONT);
+        FakeWindows.drawDialog(d, r.x, r.y, r.width, r.height, "\u041e\u0448\u0438\u0431\u043a\u0430", body, new String[]{"OK"});
+        d.dispose();
+        if (ms >= 20_300 && ms < 20_520) {                                      // he goes: a bright line where he stood, thinning to nothing
+            double f = (ms - 20_300) / 220.0;
+            Graphics2D l = (Graphics2D) g.create();
+            l.setColor(new Color(220, 200, 255, (int) (230 * (1 - f))));
+            double th = Math.max(1, unit * 1.6 * (1 - f));
+            l.fill(new java.awt.geom.Rectangle2D.Double(x - unit * 8 * (1 - f * 0.6), cy - th / 2, unit * 16 * (1 - f * 0.6), th));
+            l.dispose();
+        }
     }
 
     private double handDx, handDy;
@@ -693,7 +726,7 @@ final class GlitcherActor {
     /** Where the fist holding the TV is in the second song ({x, y} in screen pixels), or null while he is not there. */
     double[] songTwoHand(double ms, int w, int h) {
         double reform = smooth((ms - 800) / 5_000.0), leave = smooth((ms - 73_500) / 3_500.0);
-        if (ms < 0 || Math.min(reform, 1 - leave) < 0.6) return null;
+        if (ms < 0 || ms >= 20_300 || Math.min(reform, 1 - leave) < 0.6 || SnakesFx.presenting(ms) < 0.02) return null;      // the TV only while the snakes run
         return new double[]{songTwoX(ms, w) + handDx, h * 0.9 - handDy};
     }
 
