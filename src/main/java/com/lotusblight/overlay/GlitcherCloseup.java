@@ -26,7 +26,9 @@ final class GlitcherCloseup {
     /** Stretches in which the animation sticks and repeats its first moments: {from, to}, ms. */
     private static final double[][] STUCK = {{43_200, 44_700}, {49_400, 51_000}, {67_600, 68_800}};
     private static final double STUCK_LOOP_MS = 330;
-    private static final double RES = 0.5;
+    private static final double RES = 0.42;
+    /** The camera stands this far from the figure, in skin units: near enough for the fist that hits to come right at it. */
+    private static final double CAM = 46;
 
     private final Actor actor;
     private SoftRenderer rend;
@@ -114,21 +116,24 @@ final class GlitcherCloseup {
         }
         int rw = Math.max(2, (int) (w * RES)), rh = Math.max(2, (int) (h * RES));
         if (rend == null || rend.width != rw || rend.height != rh) rend = new SoftRenderer(rw, rh);
+        rend.camDist = CAM;
         double anim = animTime(ms);
         // how solid he is: black against the light until 0:38, then switched on with a flash
         double full = smooth((ms - FULL_FROM) / 380.0);
         double approach = ms < FULL_FROM ? smooth((ms - SIL_FROM) / (FULL_FROM - SIL_FROM)) : 1;   // it comes nearer over the 19 s
         double sf = 0.55 + 0.45 * approach;
-        double u = h * 0.034 * sf;                                                                  // screen pixels per skin unit
-        double ox = w * 0.44, oy = h * (1.21 + (1 - sf) * 0.62);
+        double u = h * 0.031 * sf;                                                                  // screen pixels per skin unit
+        double ox = w * 0.44, oy = h * (1.2 + (1 - sf) * 0.62);
 
         // ---- the pose
         Pose15 p = actor.begin();
         double breath = Math.sin(ms / 1000.0 * 1.5);
         p.reach(Rig15.Limb.R_LEG, -2.4, 3, 0, 1).reach(Rig15.Limb.L_LEG, 2.4, 3, 0, 1);
         p.rootPos[1] = -0.7 - 0.25 * breath;
-        actor.viewYaw = 0;
-        actor.viewPitch = 0;
+        int hi = lastHit(ms);
+        double hage = hi < 0 ? 1e9 : ms - hits[hi];
+        actor.viewYaw = 0.07 * Math.sin(ms / 1100.0) + (ms >= FULL_FROM && hage < 400 ? (hi % 2 == 0 ? 1 : -1) * 0.05 * Math.exp(-hage / 120.0) : 0);
+        actor.viewPitch = 0.03 * Math.sin(ms / 1700.0);
         // the arm with the TV: up and out at chest height, bent
         double show = SnakesFx.presenting(ms);
         if (show > 0.01) {
@@ -144,7 +149,7 @@ final class GlitcherCloseup {
             double uu = Math.max(0, Math.min(1, (anim - hits[li]) / spacing));
             rr = uu < 0.78 ? smooth(uu / 0.78) : 1 - smooth((uu - 0.78) / 0.22);
         }
-        double[] down = {-4.5, 20.0, 9.5}, up = {-7.5, 30.0, 3.5};
+        double[] down = {-4.5, 19.0, 15.0}, up = {-7.5, 30.0, 3.5};                  // the blow comes forward, at the camera
         actor.reach(Rig15.Limb.R_ARM, down[0] + (up[0] - down[0]) * rr, down[1] + (up[1] - down[1]) * rr, down[2] + (up[2] - down[2]) * rr, 1);
         actor.shapeR = Actor.Hand.GRIP;
         actor.fistR = 1;
@@ -168,21 +173,21 @@ final class GlitcherCloseup {
         double alpha = ms < FULL_FROM ? 0.30 + 0.65 * approach : 1;
 
         Graphics2D b = (Graphics2D) g.create();
-        b.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+        b.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
         b.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, (float) alpha));
         b.drawImage(rend.image, 0, 0, w, h, null);
         b.setComposite(AlphaComposite.SrcOver);
 
         // where the fist with the TV is on the screen
         if (actor.lastSkel != null) {
-            double[] hp = actor.onScreen(actor.lastSkel.endPoint(Rig15.Limb.L_ARM));
+            double[] hp = proj(actor.lastSkel.endPoint(Rig15.Limb.L_ARM));
             fistX = ox + hp[0] * u;
             fistY = oy - hp[1] * u;
             haveFist = true;
         }
         // ---- the scream: his mouth opens in the black of the face
         if (scream > 0.15 && actor.lastSkel != null) {
-            double[] top = actor.onScreen(actor.lastSkel.headTop());
+            double[] top = proj(actor.lastSkel.headTop());
             drawMouth(b, ox + top[0] * u, oy - top[1] * u + u * 4.2, u, scream);
         }
         drawCracks(b, w, h, ms, u);
@@ -193,6 +198,18 @@ final class GlitcherCloseup {
             b.fillRect(0, 0, w, h);
         }
         b.dispose();
+    }
+
+    /** A point of the body as it is seen from the camera: {x right, y up}, in skin units from the feet, with the perspective. */
+    private double[] proj(double[] st) {
+        double[] p = st;
+        double yaw = actor.viewYaw, pitch = actor.viewPitch;
+        double c = Math.cos(yaw), s = Math.sin(yaw);
+        p = new double[]{p[0] * c + p[2] * s, p[1], -p[0] * s + p[2] * c};
+        double c2 = Math.cos(pitch), s2 = Math.sin(pitch);
+        p = new double[]{p[0], p[1] * c2 - p[2] * s2, p[1] * s2 + p[2] * c2};
+        double k = CAM / Math.max(2, CAM - p[2]);
+        return new double[]{p[0] * k, p[1] * k};
     }
 
     /** A jagged white mouth, wide open, in the middle of the face. */

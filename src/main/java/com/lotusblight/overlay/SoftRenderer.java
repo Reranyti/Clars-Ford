@@ -124,22 +124,48 @@ final class SoftRenderer {
      * {@code viewYaw} about the vertical (0 = seen from the front) and tipped by {@code viewPitch}.
      * The floor point (0, 0, 0) lands at (originX, originY); {@code scale} is image pixels per skin pixel.
      */
+    /**
+     * The camera's distance from the figure in skin units, or 0 for the plain orthographic view. With a distance the figure is seen in real
+     * perspective: what is nearer the camera (z towards it) is bigger, textures are mapped with the depth taken into account.
+     */
+    double camDist = 0;
+    private boolean perspective;
+
     void drawRig(Rig15 rig, Rig15.Skel sk, int[] skin, double viewYaw, double viewPitch, double scale, double originX, double originY) {
         double[][] p = new double[4][];
+        perspective = camDist > 0;
         for (Rig15.Face face : rig.faces) {
             for (int i = 0; i < 4; i++) {
                 p[i] = rotateX(rotateY(sk.carry(face.joint(), face.corners()[i]), viewYaw), viewPitch);
             }
             double[] n = normalize(cross(sub(p[3], p[0]), sub(p[1], p[0])));
-            if (n[2] <= 1e-6) continue;
-            double light = 0.55 + 0.45 * Math.max(0, dot(n, LIGHT));
             double[][] s = new double[4][];
-            for (int i = 0; i < 4; i++) {
-                s[i] = new double[]{originX + p[i][0] * scale, originY - p[i][1] * scale, p[i][2]};
-            }
             double[][] uv = {
                     {face.u0(), face.v0()}, {face.u1(), face.v0()},
                     {face.u1(), face.v1()}, {face.u0(), face.v1()}};
+            if (perspective) {
+                // the face must look towards the camera, which stands in front of the figure at the height of its chest
+                double[] toCam = {-p[0][0], 16 - p[0][1], camDist - p[0][2]};
+                if (dot(n, toCam) <= 1e-6) continue;
+                boolean behind = false;
+                for (int i = 0; i < 4; i++) {
+                    double zc = camDist - p[i][2];
+                    if (zc < 2) {
+                        behind = true;
+                        break;
+                    }
+                    double k = camDist / zc, inv = 1.0 / zc;
+                    s[i] = new double[]{originX + p[i][0] * scale * k, originY - p[i][1] * scale * k, inv};
+                    uv[i] = new double[]{uv[i][0] * inv, uv[i][1] * inv};              // divided by the depth, to be divided back per pixel
+                }
+                if (behind) continue;
+            } else {
+                if (n[2] <= 1e-6) continue;
+                for (int i = 0; i < 4; i++) {
+                    s[i] = new double[]{originX + p[i][0] * scale, originY - p[i][1] * scale, p[i][2]};
+                }
+            }
+            double light = 0.55 + 0.45 * Math.max(0, dot(n, LIGHT));
             SkinModel.Face legacy = new SkinModel.Face(SkinModel.Part.BODY, null, face.u0(), face.v0(), face.u1(), face.v1());
             triangle(s[0], s[1], s[2], uv[0], uv[1], uv[2], legacy, skin, light);
             triangle(s[0], s[2], s[3], uv[0], uv[2], uv[3], legacy, skin, light);
@@ -208,8 +234,14 @@ final class SoftRenderer {
                 int i = y * width + x;
                 float zf = (float) z;
                 if (zf <= depth[i]) continue;
-                int u = clamp((int) Math.floor(w0 * ta[0] + w1 * tb[0] + w2 * tc[0]), uMin, uMax);
-                int v = clamp((int) Math.floor(w0 * ta[1] + w1 * tb[1] + w2 * tc[1]), vMin, vMax);
+                double us = w0 * ta[0] + w1 * tb[0] + w2 * tc[0], vs = w0 * ta[1] + w1 * tb[1] + w2 * tc[1];
+                if (perspective) {                                                   // z holds 1/depth here: the texture coordinates were divided by the depth
+                    double iz = 1.0 / z;
+                    us *= iz;
+                    vs *= iz;
+                }
+                int u = clamp((int) Math.floor(us), uMin, uMax);
+                int v = clamp((int) Math.floor(vs), vMin, vMax);
                 int texel = skin[v * 64 + u];
                 if ((texel >>> 24) < 128) continue;
                 depth[i] = zf;
