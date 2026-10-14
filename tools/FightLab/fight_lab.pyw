@@ -311,18 +311,32 @@ class Lab:
         self.say("Фразы приняты: " + ", ".join(f"{t / 1000:.2f}" for t in taps) + ". Копия старого: build/fight-lab/phrases.txt.bak. Пересоберу сам.")
 
     def accept_columns(self):
-        taps = self._read_taps("columns")
+        taps = [t / 1000 for t in self._read_taps("columns")]
         if not taps:
             self.say("Сначала размети колонки.")
             return
-        if len(taps) % 2:
-            self.say(f"Нажатий {len(taps)}: нечётное. Колонки размечаются парами: нажатие = колонки появились, следующее = колонки исчезли.")
-            return
+        # One tap = one more sign in the columns; a pause of more than 0.8 s starts a new series. A tap far closer to the one before it than the
+        # usual step is a slip of the finger and is dropped.
+        steps = sorted(b - a for a, b in zip(taps, taps[1:]) if b - a < 0.8)
+        med = steps[len(steps) // 2] if steps else 0.3
+        clean, dropped = [taps[0]], []
+        for t in taps[1:]:
+            if t - clean[-1] < med * 0.75:
+                dropped.append(t)
+            else:
+                clean.append(t)
+        series = [[clean[0]]]
+        for a, b in zip(clean, clean[1:]):
+            if b - a > 0.8:
+                series.append([b])
+            else:
+                series[-1].append(b)
         target = RES / "assets" / "lotusblight" / "overlay" / "columns.txt"
-        pairs = [(taps[i], taps[i + 1]) for i in range(0, len(taps), 2)]
-        target.write_text("# секунды: от, до (когда на краях экрана стоят колонки повторяющегося текста; размечено автором под музыку)\n"
-                          + "".join(f"{a / 1000:.3f}\t{b / 1000:.3f}\n" for a, b in pairs), encoding="utf-8")
-        self.say(f"Колонки приняты: {len(pairs)} промежутков: " + ", ".join(f"{a / 1000:.1f}-{b / 1000:.1f}" for a, b in pairs))
+        text = "# секунды: когда в колонках по краям экрана появляется следующий знак (размечено автором под музыку). Пустая строка: колонки сбросились.\n"
+        text += "\n".join("".join(f"{t:.3f}\n" for t in sr) for sr in series)
+        target.write_text(text, encoding="utf-8")
+        self.say(f"Колонки приняты: серий {len(series)}, знаков " + ", ".join(str(len(sr)) for sr in series) + f", шаг {med:.2f} с."
+                 + (f" Лишние нажатия убраны: {', '.join(f'{d:.2f}' for d in dropped)}." if dropped else ""))
 
     def accept_snakes(self):
         taps = self._read_taps("snakes")
