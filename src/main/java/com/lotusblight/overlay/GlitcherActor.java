@@ -177,8 +177,11 @@ final class GlitcherActor {
             shakeY += (jitter.nextDouble() - 0.5) * 20 * f;
         }
 
+        double aeroAmt = Hazards.aeroAt(ms), eyesAmt = Hazards.fieldAt(ms);
+        setFigureLight(aeroAmt, eyesAmt, anger);
         renderer.clearDirty();
         actor.draw(renderer, unit * ss, ox, oy);
+        rimFigure(aeroAmt, eyesAmt, anger);
 
         Graphics2D b = (Graphics2D) g.create();
         b.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
@@ -223,8 +226,135 @@ final class GlitcherActor {
         b.dispose();
 
         drawKnockRipples(g, ms, handX, handY);
+        drawKnockCracks(g, ms, handX, handY);
         drawCarried(g, w, h, ms, x, footY, scale, heading, icons, spots);
         drawThrown(g, w, h, ms, x, groundY, scale, icons);
+        drawStompFx(g, w, h, ms, px, groundY);
+    }
+
+    private static double[] mix(double[] a, double[] b, double t) {
+        return new double[]{a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t};
+    }
+
+    /** The colour of the light on him: cool at first, sunny on the Aero wallpaper, violet among the eyes, red as he seethes. */
+    private void setFigureLight(double aero, double eyes, double anger) {
+        double[] key = {1.15, 1.15, 1.35}, amb = {0.80, 0.78, 0.95};
+        key = mix(key, new double[]{1.30, 1.20, 1.02}, aero);
+        amb = mix(amb, new double[]{0.92, 0.88, 0.90}, aero);
+        key = mix(key, new double[]{1.25, 1.05, 1.50}, eyes);
+        amb = mix(amb, new double[]{0.78, 0.70, 1.00}, eyes);
+        key = mix(key, new double[]{1.45, 0.90, 0.88}, anger);
+        amb = mix(amb, new double[]{0.95, 0.68, 0.68}, anger);
+        renderer.setLight(key, amb);
+    }
+
+    /** The coloured light along the edge of him: from above-left, and a second colour from the right when he is angry or among the eyes. */
+    private void rimFigure(double aero, double eyes, double anger) {
+        int thick = Math.max(2, (int) Math.round(unit * ss * 0.28));
+        int cool = aero > 0.5 ? 0xFFE4A8 : (eyes > 0.5 ? 0xC9A8FF : 0xA8C4FF);
+        ActorFx.rim(renderer, cool, 0.55, -0.6, 0.9, thick);
+        if (anger > 0.02) ActorFx.rim(renderer, 0xFF3A55, 0.9 * anger, 0.8, 0.3, thick);
+        else if (eyes > 0.02) ActorFx.rim(renderer, 0x8F6BFF, 0.8 * eyes, 0.9, 0.2, thick);
+    }
+
+    /** Cracks that run out over the "glass" from where each knock lands, then fade. */
+    private void drawKnockCracks(Graphics2D g, double ms, double hx, double hy) {
+        Graphics2D b = null;
+        for (int i = 0; i < 3; i++) {
+            double age = ms - (KNOCK_FROM + 500 + i * 800);
+            if (age < 0 || age > 1700) continue;
+            if (b == null) {
+                b = (Graphics2D) g.create();
+                b.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            }
+            double grow = Math.min(1, age / 140.0), fade = age < 800 ? 1 : 1 - (age - 800) / 900.0;
+            Random rnd = new Random(31L * i + 5);
+            for (int ray = 0; ray < 7; ray++) {
+                double ang = ray * Math.PI * 2 / 7 + rnd.nextDouble() * 0.6;
+                double px = hx, py = hy;
+                int segs = 4;
+                double[][] pts = new double[segs + 1][2];
+                pts[0] = new double[]{px, py};
+                for (int sgm = 1; sgm <= segs; sgm++) {
+                    ang += (rnd.nextDouble() - 0.5) * 0.7;
+                    double len = unit * (2.2 + rnd.nextDouble() * 3.2);
+                    px += Math.cos(ang) * len;
+                    py += Math.sin(ang) * len;
+                    pts[sgm] = new double[]{px, py};
+                }
+                int n = 1 + (int) Math.ceil(grow * segs);
+                for (int pass = 0; pass < 2; pass++) {
+                    b.setStroke(new BasicStroke(pass == 0 ? 5f : 1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                    b.setColor(pass == 0 ? new Color(150, 110, 255, (int) (90 * fade)) : new Color(255, 255, 255, (int) (230 * fade)));
+                    for (int k = 1; k < Math.min(n, segs + 1); k++) {
+                        b.drawLine((int) pts[k - 1][0], (int) pts[k - 1][1], (int) pts[k][0], (int) pts[k][1]);
+                    }
+                }
+            }
+        }
+        if (b != null) b.dispose();
+    }
+
+    private static BufferedImage puffSprite;
+
+    private static BufferedImage puff() {
+        if (puffSprite == null) {
+            BufferedImage im = new BufferedImage(64, 64, BufferedImage.TYPE_INT_ARGB_PRE);
+            Graphics2D pg = im.createGraphics();
+            pg.setPaint(new RadialGradientPaint(32, 32, 32, new float[]{0f, 1f},
+                    new Color[]{new Color(210, 200, 235, 255), new Color(210, 200, 235, 0)}));
+            pg.fillRect(0, 0, 64, 64);
+            pg.dispose();
+            puffSprite = im;
+        }
+        return puffSprite;
+    }
+
+    /** One ring of light running out over the floor from a point (age 0..1). */
+    private static void floorRing(Graphics2D g, double cx, double cy, double age, double maxR, double flat, int w, double h) {
+        if (age <= 0 || age >= 1) return;
+        double r = maxR * (1 - Math.pow(1 - age, 2.2));
+        int alpha = (int) (210 * Math.pow(1 - age, 1.6));
+        Graphics2D rg = (Graphics2D) g.create();
+        rg.clipRect(0, (int) (cy - r * flat * 1.15) - 4, w, (int) (r * flat * 2.3) + 8);
+        rg.translate(cx, cy);
+        rg.scale(1, flat);
+        rg.setStroke(new BasicStroke((float) Math.max(1.5, h * 0.012 * (1 - age))));
+        rg.setColor(new Color(180, 130, 255, alpha / 2));
+        rg.draw(new java.awt.geom.Ellipse2D.Double(-r, -r, r * 2, r * 2));
+        rg.setColor(new Color(255, 255, 255, Math.min(255, alpha)));
+        rg.setStroke(new BasicStroke((float) Math.max(1f, h * 0.004 * (1 - age))));
+        rg.draw(new java.awt.geom.Ellipse2D.Double(-r, -r, r * 2, r * 2));
+        rg.dispose();
+    }
+
+    /** The foot comes down: a flash, two rings of light over the floor and a burst of dust. */
+    private void drawStompFx(Graphics2D g, int w, int h, double ms, double fx, double fy) {
+        double age = ms - STOMP_MS;
+        if (age < 0 || age > 1500) return;
+        Graphics2D b = (Graphics2D) g.create();
+        b.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        if (age < 170) {
+            b.setColor(new Color(255, 255, 255, (int) (150 * (1 - age / 170.0))));
+            b.fillRect(0, 0, w, h);
+        }
+        floorRing(b, fx, fy, age / 950.0, w * 0.7, 0.16, w, h);
+        floorRing(b, fx, fy, (age - 130) / 950.0, w * 0.5, 0.16, w, h);
+        BufferedImage sprite = puff();
+        Random r = new Random(77);
+        double s = age / 1000.0;
+        for (int i = 0; i < 30; i++) {
+            double side = r.nextBoolean() ? 1 : -1;
+            double speed = h * (0.25 + 0.9 * r.nextDouble());
+            double rise = h * (0.02 + 0.10 * r.nextDouble());
+            double size = h * (0.03 + 0.05 * r.nextDouble()) * (1 + 1.6 * s);
+            double x = fx + side * speed * s * (1 - 0.32 * s);
+            double y = fy - rise * s * 3 - size * 0.2;
+            float a = (float) (0.5 * Math.max(0, 1 - age / 1500.0));
+            b.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, a));
+            b.drawImage(sprite, (int) (x - size), (int) (y - size), (int) (size * 2), (int) (size * 2), null);
+        }
+        b.dispose();
     }
 
     /** Thin rings spreading over the "glass" where his hand knocks. */
@@ -286,6 +416,14 @@ final class GlitcherActor {
 
     /** He comes apart into squares that peel off in turn, drift up and away, and fade. */
     private void drawDissolving(Graphics2D b, double d) {
+        // the light of him going out: a violet glow that swells and fades behind the squares
+        double glow = Math.sin(Math.PI * Math.min(1, d * 1.15));
+        if (glow > 0.02) {
+            double gr = unit * ss * 22;
+            b.setPaint(new RadialGradientPaint(0f, (float) (-unit * ss * 14), (float) gr, new float[]{0f, 1f},
+                    new Color[]{new Color(150, 100, 255, (int) (120 * glow)), new Color(150, 100, 255, 0)}));
+            b.fill(new java.awt.geom.Ellipse2D.Double(-gr, -unit * ss * 14 - gr, gr * 2, gr * 2));
+        }
         int tile = 22;
         Random rnd = new Random(2607);
         for (int ty = 0; ty < renderer.height; ty += tile) {
@@ -360,6 +498,26 @@ final class GlitcherActor {
             double alpha = age < 2600 ? 1 : 1 - (age - 2600) / 800.0;
             double size = h * sizeK * grow;
             double sc = size / Math.max(icon.getWidth(), icon.getHeight());
+            if (age < 1700) {                                                   // the air leaves ghosts of it behind
+                for (int gi = 3; gi >= 1; gi--) {
+                    double fg = Math.max(0, f - 0.055 * gi), eg = 1 - (1 - fg) * (1 - fg);
+                    double gx2 = sx + (tx - sx) * eg, gy2 = sy + (ty - sy) * eg - Math.sin(Math.PI * fg) * h * 0.22;
+                    double gsc = h * sizeK * (0.55 + 0.75 * eg) / Math.max(icon.getWidth(), icon.getHeight());
+                    AffineTransform keep = b.getTransform();
+                    b.translate(gx2, gy2);
+                    b.scale(gsc, gsc);
+                    b.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, (float) (0.2 / gi * Math.max(0, alpha))));
+                    b.drawImage(icon, -icon.getWidth() / 2, -icon.getHeight() / 2, null);
+                    b.setTransform(keep);
+                }
+            }
+            if (age >= 1500 && age < 1900) {                                    // and a ring where it lands
+                double lf = (age - 1500) / 400.0;
+                b.setStroke(new BasicStroke((float) (3 * (1 - lf) + 1)));
+                b.setColor(new Color(255, 255, 255, (int) (170 * (1 - lf))));
+                double rr = size * (0.4 + 0.9 * lf);
+                b.draw(new java.awt.geom.Ellipse2D.Double(x - rr, y - rr, rr * 2, rr * 2));
+            }
             AffineTransform old = b.getTransform();
             b.translate(x, y);
             b.rotate(age / 1000.0 * (rnd.nextBoolean() ? 5 : -5) * (1 - f * 0.8) * (sizeK > 0.15 ? 0.25 : 1));
@@ -561,6 +719,19 @@ final class GlitcherActor {
         b.setPaint(new RadialGradientPaint((float) (w / 2.0), (float) (h / 2.0), (float) r, new float[]{0.45f, 1f},
                 new Color[]{new Color(180, 0, 20, 0), new Color(180, 0, 20, Math.max(0, alpha))}));
         b.fillRect(0, 0, w, h);
+        // embers rising, brighter and more of them as he seethes
+        b.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        int n = (int) (14 + 50 * anger);
+        Random er = new Random(404);
+        for (int i = 0; i < n; i++) {
+            double ex = er.nextDouble() * w, speed = 0.05 + 0.10 * er.nextDouble(), phase = er.nextDouble() * 10_000, sway = er.nextDouble() * 6;
+            double life = ((ms + phase) * speed / 1000.0) % 1.0;
+            double y = h * (1.02 - 1.04 * life), x = ex + Math.sin(ms / 1000.0 * 1.3 + sway) * h * 0.02;
+            double sz = h * (0.004 + 0.006 * er.nextDouble()) * (1 - 0.4 * life);
+            int a = (int) (200 * anger * Math.sin(Math.PI * life));
+            b.setColor(new Color(255, 90 + (int) (110 * (1 - life)), 40, Math.max(0, Math.min(255, a))));
+            b.fill(new java.awt.geom.Ellipse2D.Double(x - sz, y - sz, sz * 2, sz * 2));
+        }
         b.dispose();
     }
 

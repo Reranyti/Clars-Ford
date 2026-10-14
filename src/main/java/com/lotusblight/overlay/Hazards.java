@@ -386,6 +386,11 @@ final class Hazards {
         b.setColor(new Color(0, 0, 0, (int) (235 * k)));
         b.fillOval((int) (cx - hole), (int) (cy - hole), (int) (hole * 2), (int) (hole * 2));
         double t = timeMs / 1000.0;
+        float halo = (float) (hole * 2.3);
+        double breath = 0.75 + 0.25 * Math.sin(t * 2.4);
+        b.setPaint(new java.awt.RadialGradientPaint((float) cx, (float) cy, halo, new float[]{0.42f, 1f},
+                new Color[]{new Color(150, 100, 255, (int) (95 * k * breath)), new Color(150, 100, 255, 0)}));
+        b.fillRect((int) (cx - halo), (int) (cy - halo), (int) (halo * 2), (int) (halo * 2));
         // Rings of eyes, each ring a step further out and a step bigger, lying along the ring like scales.
         int idx = 0;
         double r = hole * 1.14;
