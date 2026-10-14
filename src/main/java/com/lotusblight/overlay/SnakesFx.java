@@ -1,9 +1,14 @@
 package com.lotusblight.overlay;
 
+import java.awt.AlphaComposite;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
-import java.awt.geom.Rectangle2D;
+import java.awt.geom.AffineTransform;
+import java.awt.geom.Ellipse2D;
+import java.awt.geom.Line2D;
+import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -13,8 +18,9 @@ import java.util.List;
 import java.util.Random;
 
 /**
- * The snakes of errors: on the fast runs of the second song (snakes.txt: the moments, in seconds, the author marked by ear) chains of glitching
- * squares shoot out of the Glitcher's head and race over the screen, turning at right angles, their heads little error windows.
+ * The snakes of errors: on the fast runs of the second song (snakes.txt: the moments, in seconds, the author marked by ear) a huge snake
+ * made of error windows pours out of the Glitcher's head and winds across the whole screen. Every link of its body is an error window,
+ * big at the head and smaller towards the tail; the head has eyes and a tongue.
  * They replace the error windows that used to be thrown under the music. They are only a picture: nothing to click, no damage.
  */
 final class SnakesFx {
@@ -23,11 +29,11 @@ final class SnakesFx {
         double[] at(double ms);
     }
 
-    private static final double LIFE_MS = 1_500;
-    private static final int PER_MARK = 2;
-    private static final int[] PALETTE = {0x7300FF, 0xB25CFF, 0xFFFFFF, 0x9A6BFF, 0xFF3A55};
+    private static final double LIFE_MS = 2_300;
+    private static final int LINKS = 17;
 
     private final List<Double> marks = new ArrayList<>();
+    private static List<BufferedImage> windows;
 
     SnakesFx() {
         try (InputStream in = SnakesFx.class.getResourceAsStream("/assets/lotusblight/overlay/snakes.txt")) {
@@ -44,89 +50,108 @@ final class SnakesFx {
         }
     }
 
-    /** The corners of a path: it starts at (x0, y0), runs along one axis, turns a right angle, and so on until it has left the screen. */
-    private static List<double[]> path(double x0, double y0, int w, int h, Random rnd) {
-        List<double[]> pts = new ArrayList<>();
-        pts.add(new double[]{x0, y0});
-        double x = x0, y = y0;
-        // first away from the nearer edge, so that it has room to run
-        int dir = rnd.nextBoolean() ? (x0 < w / 2.0 ? 0 : 2) : (y0 < h / 2.0 ? 1 : 3);     // 0 right, 1 down, 2 left, 3 up
-        for (int k = 0; k < 10; k++) {
-            boolean horiz = dir % 2 == 0;
-            double len = horiz ? w * (0.08 + 0.22 * rnd.nextDouble()) : h * (0.12 + 0.34 * rnd.nextDouble());
-            if (dir == 0) x += len; else if (dir == 2) x -= len; else if (dir == 1) y += len; else y -= len;
-            pts.add(new double[]{x, y});
-            if (x < -w * 0.05 || x > w * 1.05 || y < -h * 0.05 || y > h * 1.05) break;
-            dir = (dir + (rnd.nextBoolean() ? 1 : 3)) % 4;
+    private static List<BufferedImage> windows() {
+        if (windows == null) {
+            List<BufferedImage> base = GlitcherActor.errorWindowSprites();
+            windows = new ArrayList<>();
+            for (BufferedImage b : base) {
+                BufferedImage pre = new BufferedImage(b.getWidth(), b.getHeight(), BufferedImage.TYPE_INT_ARGB_PRE);   // the fast kind to draw turned and scaled
+                Graphics2D g = pre.createGraphics();
+                g.drawImage(b, 0, 0, null);
+                g.dispose();
+                windows.add(pre);
+            }
         }
-        return pts;
+        return windows;
     }
 
-    /** The point at a distance along the path, and the way it is heading. */
-    private static double[] along(List<double[]> pts, double dist) {
-        double left = Math.max(0, dist);
-        for (int i = 1; i < pts.size(); i++) {
-            double[] a = pts.get(i - 1), b = pts.get(i);
-            double len = Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]);
-            if (left <= len || i == pts.size() - 1) {
-                double f = len == 0 ? 0 : Math.min(1, left / len);
-                return new double[]{a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, b[0] - a[0], b[1] - a[1]};
-            }
-            left -= len;
-        }
-        double[] e = pts.get(pts.size() - 1);
-        return new double[]{e[0], e[1], 0, 0};
+    /** The geometry of one snake: where it starts, the way it goes, how it winds. */
+    private record Shape(double x0, double y0, double dx, double dy, double amp, double wave, double phase, double speed, long seed) {}
+
+    private static Shape shape(double[] o, int w, int h, double mark, int idx) {
+        Random rnd = new Random((long) (mark * 7) + idx * 131L);
+        // across the screen: towards a point on the far side from where it starts, so that it crosses the whole picture
+        double tx = o[0] < w / 2.0 ? w * (0.8 + 0.4 * rnd.nextDouble()) : -w * (0.1 + 0.3 * rnd.nextDouble());
+        double ty = h * (0.1 + 0.8 * rnd.nextDouble());
+        double dx = tx - o[0], dy = ty - o[1], len = Math.max(1, Math.hypot(dx, dy));
+        return new Shape(o[0], o[1], dx / len, dy / len, h * (0.16 + 0.10 * rnd.nextDouble()), h * (0.75 + 0.5 * rnd.nextDouble()),
+                rnd.nextDouble() * Math.PI * 2, w * (1.05 + 0.4 * rnd.nextDouble()) / 1000.0, (long) (mark * 13) + idx);
+    }
+
+    /** The point of its body at distance s along its way: the straight line from the head's start, swayed from side to side. */
+    private static double[] at(Shape sh, double s) {
+        double grow = Math.min(1, Math.max(0, s) / (sh.wave * 0.9));                  // it leaves the head straight, then starts to wind
+        double side = sh.amp * grow * Math.sin(s / sh.wave * Math.PI * 2 + sh.phase);
+        double px = -sh.dy, py = sh.dx;
+        return new double[]{sh.x0 + sh.dx * s + px * side, sh.y0 + sh.dy * s + py * side};
     }
 
     void render(Graphics2D g, int w, int h, double ms, Origin origin) {
         Graphics2D b = null;
-        for (double mark : marks) {
-            double age = ms - mark;
+        for (int m = 0; m < marks.size(); m++) {
+            double mark = marks.get(m), age = ms - mark;
             if (age < 0 || age > LIFE_MS) continue;
             if (b == null) {
                 b = (Graphics2D) g.create();
-                b.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+                b.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                b.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
             }
-            double[] o = origin.at(mark);
-            for (int s = 0; s < PER_MARK; s++) {
-                Random rnd = new Random((long) (mark * 7) + s * 131L);
-                List<double[]> pts = path(o[0], o[1], w, h, rnd);
-                double speed = w * (1.5 + 0.8 * rnd.nextDouble()) / 1000.0;           // px per ms
-                double trail = w * (0.22 + 0.16 * rnd.nextDouble());
-                double cell = h * 0.03;
-                double head = speed * age;
-                Random jit = new Random((long) (ms / 35) + s);
-                for (double d = head; d > Math.max(-cell, head - trail); d -= cell) {
-                    double[] p = along(pts, d);
-                    double fall = 1 - (head - d) / trail;                                // 1 at the head, 0 at the tail
-                    double life = 1 - Math.pow(age / LIFE_MS, 3);
-                    int alpha = (int) Math.max(0, Math.min(255, 255 * fall * life));
-                    if (alpha < 8) continue;
-                    int c = PALETTE[Math.floorMod((int) (d / cell) + s * 2, PALETTE.length)];
-                    double jx = (jit.nextDouble() - 0.5) * cell * 0.5, jy = (jit.nextDouble() - 0.5) * cell * 0.5;
-                    double sz = cell * (0.55 + 0.45 * fall);
-                    b.setColor(new Color((c >> 16) & 255, (c >> 8) & 255, c & 255, alpha));
-                    b.fill(new Rectangle2D.Double(p[0] - sz / 2 + jx, p[1] - sz / 2 + jy, sz, sz));
+            Shape sh = shape(origin.at(mark), w, h, mark, m % 2);
+            double spacing = h * 0.14;
+            double head = sh.speed * age;
+            double life = age < LIFE_MS - 400 ? 1 : 1 - (age - (LIFE_MS - 400)) / 400.0;
+            List<BufferedImage> pics = windows();
+            Random rnd = new Random(sh.seed);
+            // the tail first, the head on top
+            for (int j = LINKS - 1; j >= 0; j--) {
+                BufferedImage pic = pics.get(rnd.nextInt(pics.size()));
+                double s = head - j * spacing;
+                if (s < -spacing * 0.5) continue;                          // this link has not come out of the head yet
+                double[] p = at(sh, s), q = at(sh, s + h * 0.02);
+                double ang = Math.atan2(q[1] - p[1], q[0] - p[0]);
+                double taper = 1 - 0.58 * j / (double) (LINKS - 1);
+                double width = h * (j == 0 ? 0.56 : 0.42) * taper;
+                double sc = width / pic.getWidth();
+                AffineTransform keep = b.getTransform();
+                b.translate(p[0], p[1]);
+                // the window is turned the way the snake goes but never upside down, so its text stays readable
+                double turn = ang + (j % 2 == 0 ? 0.1 : -0.1);
+                if (Math.cos(ang) < 0) turn += Math.PI;
+                b.rotate(turn);
+                b.scale(sc, sc);
+                b.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, (float) Math.max(0, Math.min(1, life * (0.55 + 0.45 * taper)))));
+                b.drawImage(pic, -pic.getWidth() / 2, -pic.getHeight() / 2, null);
+                b.setTransform(keep);
+                if (j == 0) {                                                  // the face looks the way the snake goes
+                    b.translate(p[0], p[1]);
+                    b.rotate(ang);
+                    b.scale(sc, sc);
+                    b.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, (float) Math.max(0, Math.min(1, life))));
+                    drawFace(b, pic.getWidth(), pic.getHeight(), age);
+                    b.setTransform(keep);
                 }
-                if (head >= 0) drawHead(b, along(pts, head), h, 1 - Math.pow(age / LIFE_MS, 3), jit);
             }
+            b.setComposite(AlphaComposite.SrcOver);
         }
         if (b != null) b.dispose();
     }
 
-    /** The head: a little error window (pale body, blue title bar, a red button). */
-    private static void drawHead(Graphics2D b, double[] p, int h, double life, Random jit) {
-        double ww = h * 0.075, hh = h * 0.055;
-        double x = p[0] - ww / 2 + (jit.nextDouble() - 0.5) * 4, y = p[1] - hh / 2 + (jit.nextDouble() - 0.5) * 4;
-        int a = (int) Math.max(0, Math.min(255, 255 * life));
-        b.setColor(new Color(237, 228, 246, a));
-        b.fill(new Rectangle2D.Double(x, y, ww, hh));
-        b.setColor(new Color(46, 92, 224, a));
-        b.fill(new Rectangle2D.Double(x, y, ww, hh * 0.28));
-        b.setColor(new Color(216, 48, 48, a));
-        b.fill(new Rectangle2D.Double(x + ww * 0.82, y + hh * 0.04, ww * 0.15, hh * 0.2));
-        b.setColor(new Color(60, 50, 90, a));
-        b.fill(new Rectangle2D.Double(x + ww * 0.12, y + hh * 0.5, ww * 0.5, hh * 0.08));
-        b.fill(new Rectangle2D.Double(x + ww * 0.12, y + hh * 0.68, ww * 0.34, hh * 0.08));
+    /** The head: two eyes on the title bar and a forked tongue out of the front, flickering. */
+    private static void drawFace(Graphics2D b, int pw, int ph, double age) {
+        double fx = pw * 0.30, eyeGap = ph * 0.22, er = ph * 0.15;
+        b.setColor(new Color(255, 255, 255));
+        b.fill(new Ellipse2D.Double(fx - er, -eyeGap - er, er * 2, er * 2));
+        b.fill(new Ellipse2D.Double(fx - er, eyeGap - er, er * 2, er * 2));
+        b.setColor(new Color(20, 12, 34));
+        b.fill(new Ellipse2D.Double(fx + er * 0.1 - er * 0.5, -eyeGap - er * 0.75, er, er * 1.5));
+        b.fill(new Ellipse2D.Double(fx + er * 0.1 - er * 0.5, eyeGap - er * 0.75, er, er * 1.5));
+        if (((int) (age / 90)) % 3 != 2) {                                            // the tongue flickers
+            double tx = pw / 2.0, ty = 0, len = pw * 0.34;
+            b.setColor(new Color(255, 40, 70));
+            b.setStroke(new BasicStroke((float) (ph * 0.06), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            b.draw(new Line2D.Double(tx, ty, tx + len * 0.7, ty));
+            b.draw(new Line2D.Double(tx + len * 0.7, ty, tx + len, ty - ph * 0.18));
+            b.draw(new Line2D.Double(tx + len * 0.7, ty, tx + len, ty + ph * 0.18));
+        }
     }
 }
