@@ -28,6 +28,7 @@ final class RhythmGame {
     private int hits;
     private int misses;
     private int muted;                                   // circles switched off for another mechanic
+    private int skipped;                                 // circles taken out for a black screen of words: nothing to hit, no damage, no stats
     private int nextMiss;                                // first circle not yet hit or judged missed
     private final boolean[] hit;
     private final boolean[] missed;
@@ -65,6 +66,14 @@ final class RhythmGame {
     }
 
     /** Circles inside [from, to) are switched off: another mechanic owns that stretch of the song. */
+    /** Takes the circles of a stretch out of the game altogether: no damage, no stats, and nothing for the Glitcher's bar (unlike {@link #mute}). */
+    void skip(double fromMs, double toMs) {
+        for (int i = 0; i < map.circles.size(); i++) {
+            double t = map.circles.get(i).timeMs();
+            if (t >= fromMs && t < toMs && !hit[i]) { hit[i] = true; skipped++; }
+        }
+    }
+
     void mute(double fromMs, double toMs) {
         for (int i = 0; i < map.circles.size(); i++) {
             double t = map.circles.get(i).timeMs();
@@ -95,7 +104,7 @@ final class RhythmGame {
     int combo() { return combo; }
     int hits() { return hits; }
     int misses() { return misses; }
-    int total() { return map.circles.size() - muted; }
+    int total() { return map.circles.size() - muted - skipped; }
     int maxCombo() { return maxCombo; }
 
     /** A rank for an accuracy 0..1, osu-style. */

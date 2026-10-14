@@ -205,6 +205,8 @@ public final class GameMain {
 
         double[] contactBeats = ContactBreak.beatTimes();
         g2.mute(ContactBreak.START, ContactBreak.END);          // the eyes take over from the circles
+        PhraseScreen phraseScreen = new PhraseScreen();
+        for (double[] iv : phraseScreen.intervals()) g2.skip(iv[0], iv[1]);   // the black screens of words: nothing to hit there
         ContactBreak contact = new ContactBreak(contactBeats, g2::hurt,
                 () -> g2.contactHit(1.0 / Math.max(1, contactBeats.length)));
         if ((cutsceneAt >= 0 || finaleAt >= 0) && desktopShot() == null) {
@@ -212,6 +214,7 @@ public final class GameMain {
         }
         int[] honchoSkin = loadSkinFile("/assets/lotusblight/textures/entity/honcho.png");
         Engine engine = new Engine(g1, g2, g3, anim, fakeWindows, karaoke, contact, song1Wav, song2Wav, song3Wav, animWav);
+        engine.phraseScreen = phraseScreen;
         engine.setup(skin, honchoSkin != null ? honchoSkin : skin, screen.height);
         if (chromo) engine.chromo1 = new ChromoSong1();
         if (lessonOnly) engine.jumpToLesson();
@@ -322,6 +325,7 @@ public final class GameMain {
 
     /** Drives the phases and owns the music clock for each one. */
     private static final class Engine {
+        PhraseScreen phraseScreen;
         private final RhythmGame g1, g2;
         private final FinaleVideo anim;
         private final FakeWindows fakeWindows;
@@ -698,6 +702,7 @@ public final class GameMain {
                         contact.renderBackdrop(g, w, h, t);
                         if (recordFile == null) contact.renderEye(g, w, h, t);
                         drawSong2(g, w, h, t);
+                        if (phraseScreen != null) phraseScreen.render(g, w, h, t);      // the words, on black, over everything
                         if (recordFile != null) recordHud(g, w, h, t);
                     }
                     if (!g2.alive()) end(Phase.DEFEAT);
