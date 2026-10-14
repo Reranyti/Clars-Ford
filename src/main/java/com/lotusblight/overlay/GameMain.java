@@ -327,6 +327,7 @@ public final class GameMain {
     private static final class Engine {
         PhraseScreen phraseScreen;
         private final ColumnsFx columns = new ColumnsFx();
+        private final SnakesFx snakes = new SnakesFx();
         private final RhythmGame g1, g2;
         private final FinaleVideo anim;
         private final FakeWindows fakeWindows;
@@ -806,11 +807,11 @@ public final class GameMain {
                 if (hazards != null) hazards.renderCarryover(g, w, h, t);
                 g2.render(g, w, h, t);
                 // The torn-up backdrop is the Glitcher's windows while the eyes are on; no extra ones on top.
-                if (t < ContactBreak.START || t >= ANIM_START_MS - 1500) fakeWindows.render(g, w, h, t);
                 if (hazards != null) {
                     Graphics2D cam = cameraGraphics(g, w, h, t);
                     hazards.renderSong2(cam, w, h, t);
                     cam.dispose();
+                    if (recordFile == null) snakes.render(g, w, h, t, ms -> hazards.songTwoHead(ms, w, h));
                 }
             }
         }

@@ -657,13 +657,6 @@ final class GlitcherActor {
         a.viewYaw = heading * 1.15 * walking;
         double phase = t * 2.6 * Math.PI;
         GlitcherPoses.walk(a, phase, walking, 0.2, t);
-        for (double start : STARTS2) {
-            double d = ms - start;
-            if (d >= 0 && d < 1500) {
-                GlitcherPoses.throwIcon(a, d);
-                break;
-            }
-        }
         if (walking < 0.2) a.blendTurn(Rig15.Joint.HEAD, 8, 0, 0, 1 - walking / 0.2);      // just formed: a little dazed
         renderer.clearDirty();
         actor.draw(renderer, unit * ss, ox, oy);
@@ -679,7 +672,13 @@ final class GlitcherActor {
         b.setTransform(base);
         b.dispose();
 
-        drawThrownGeneric(g, w, h, ms, STARTS2, errorWindows, 0.22, r -> songTwoX(r, w), groundY - unit * 22 * scale);
+    }
+
+    /** Where his head is in the second song ({x, y}); in the middle of the screen once he is gone (the snakes then come out of the middle). */
+    double[] songTwoHead(double ms, int w, int h) {
+        double reform = smooth((ms - 800) / 5_000.0), leave = smooth((ms - 73_500) / 3_500.0);
+        if (Math.min(reform, 1 - leave) < 0.4) return new double[]{w * 0.5, h * 0.5};
+        return new double[]{songTwoX(ms, w), h * 0.9 - unit * 29 * 0.85};
     }
 
     /** Error windows to throw: pale body, blue title bar, red button, a line of text and a button. */
