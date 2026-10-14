@@ -19,8 +19,8 @@ final class OldTv {
     private static final Color BODY = new Color(0x2A2420), BODY_LIGHT = new Color(0x4A4038), BODY_DARK = new Color(0x14100E);
 
     /** Where the glass will be for a set of this size and place: {x, y, w, h} (the same arithmetic as {@link #draw}). */
-    static double[] glassOf(double cx, double bottom, double tvW) {
-        double f = tvW / 900.0, tvH = tvW * 0.56, vcrH = tvW * 0.10;
+    static double[] glassOf(double cx, double bottom, double tvW, boolean deck) {
+        double f = tvW / 900.0, tvH = tvW * 0.56, vcrH = deck ? tvW * 0.10 : -6 * f;
         double vcrY = bottom - vcrH, tvY = vcrY - 6 * f - tvH, tvX = cx - tvW / 2;
         return new double[]{tvX + 18 * f, tvY + 18 * f, tvW - (36 + 74) * f, tvH - 36 * f};
     }
@@ -34,12 +34,12 @@ final class OldTv {
      * @param tvW    width of the set (the picture tube and the strip)
      * @param power  0..1: how far it is switched on (it opens from a line of light)
      */
-    void draw(Graphics2D g0, double cx, double bottom, double tvW, double ms, double power) {
+    void draw(Graphics2D g0, double cx, double bottom, double tvW, double ms, double power, boolean deck) {
         if (power <= 0) return;
         Graphics2D g = (Graphics2D) g0.create();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         double f = tvW / 900.0;                                   // the original is laid out for about 900 px of width
-        double tvH = tvW * 0.56, vcrW = tvW * 0.60, vcrH = tvW * 0.10;
+        double tvH = tvW * 0.56, vcrW = tvW * 0.60, vcrH = deck ? tvW * 0.10 : -6 * f;       // a carried set has no deck under it
         double vcrY = bottom - vcrH, tvY = vcrY - 6 * f - tvH, tvX = cx - tvW / 2, vcrX = cx - vcrW / 2;
         double sx = tvX + 18 * f, sy = tvY + 18 * f, sw = tvW - (36 + 74) * f, sh = tvH - 36 * f;
         glass[0] = sx; glass[1] = sy; glass[2] = sw; glass[3] = sh;
@@ -56,7 +56,8 @@ final class OldTv {
         g.setColor(power > 0.6 ? new Color(0xE03030) : new Color(0x501010));
         g.fill(new Rectangle2D.Double(sc + 36 * f, sy + sh - 16 * f, 8 * f, 6 * f));
         // the video deck
-        panel(g, vcrX, vcrY, vcrX + vcrW, vcrY + vcrH, new Color(0x1E1A18), new Color(0x3A322C), new Color(0x0C0A09), f);
+        if (deck) panel(g, vcrX, vcrY, vcrX + vcrW, vcrY + vcrH, new Color(0x1E1A18), new Color(0x3A322C), new Color(0x0C0A09), f);
+        if (deck) {
         double slotW = vcrW * 0.5, slotX = vcrX + (vcrW - slotW) / 2;
         g.setColor(new Color(0x040302));
         g.fill(new Rectangle2D.Double(slotX, vcrY + vcrH / 2 - 3 * f, slotW, 7 * f));
@@ -67,7 +68,7 @@ final class OldTv {
         g.setFont(new Font(Font.MONOSPACED, Font.BOLD, Math.max(8, (int) (11 * f))));
         g.setColor(power > 0.6 ? new Color(0xE0A030) : new Color(0x605040));
         g.drawString("VHS", (float) (vcrX + vcrW - 38 * f), (float) (vcrY + 17 * f));
-
+        }
         glass(g, sx, sy, sw, sh, ms, power, f);
         g.dispose();
     }

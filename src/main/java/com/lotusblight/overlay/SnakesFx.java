@@ -22,8 +22,6 @@ final class SnakesFx {
     private static final double LIFE_MS = 2_500;
     private static final double STEP_MS = 46;               // the window jumps this often: it keeps freezing
     private static final int COPIES = 30;
-    private static final double TV_IN_MS = 380;             // the set comes up this long before the first snake
-    private static final double TV_OUT_MS = 500;
 
     private final List<Double> marks = new ArrayList<>();
     private final OldTv tv = new OldTv();
@@ -60,31 +58,26 @@ final class SnakesFx {
         return windows;
     }
 
-    // ---- the set: where it stands
-
-    private static double tvW(int h) { return h * 0.66; }
-    private static double tvCx(int w) { return w * 0.22; }
-    private static double tvBottom(int h) { return h * 0.985; }
-
-    /** The middle of the TV's glass, where the snakes come out. */
-    private static double[] mouth(int w, int h) {
-        double[] gl = OldTv.glassOf(tvCx(w), tvBottom(h), tvW(h));
-        return new double[]{gl[0] + gl[2] / 2, gl[1] + gl[3] / 2};
+    /** Where the Glitcher's right fist is at a moment ({x, y}); null while he is not on the screen. */
+    interface Hand {
+        double[] at(double ms);
     }
 
-    /** How much the set is up at this moment, 0..1 (it comes up before the first snake of a run and goes after the last). */
-    private double tvAmount(double ms) {
-        double best = 0;
-        for (double m : marks) {
-            double age = ms - m;
-            double a;
-            if (age < -TV_IN_MS || age > LIFE_MS + TV_OUT_MS) continue;
-            if (age < 0) a = smooth((age + TV_IN_MS) / TV_IN_MS);
-            else if (age <= LIFE_MS) a = 1;
-            else a = 1 - smooth((age - LIFE_MS) / TV_OUT_MS);
-            best = Math.max(best, a);
-        }
-        return best;
+    // ---- the set: the Glitcher carries it in his right hand
+
+    private static double tvW(int h) { return h * 0.34; }
+
+    /** The set's place for a fist at (x, y): it is gripped by its side, so it hangs a little above and in front of the fist. */
+    private static double[] setPlace(double[] fist, int h) {
+        double tvW = tvW(h), tvH = tvW * 0.56;
+        return new double[]{fist[0] + tvW * 0.28, fist[1] + tvH * 0.30};            // cx, bottom
+    }
+
+    /** The middle of the TV's glass, where the snakes come out. */
+    private static double[] mouth(double[] fist, int h) {
+        double[] p = setPlace(fist, h);
+        double[] gl = OldTv.glassOf(p[0], p[1], tvW(h), false);
+        return new double[]{gl[0] + gl[2] / 2, gl[1] + gl[3] / 2};
     }
 
     private static double smooth(double x) {
@@ -111,17 +104,18 @@ final class SnakesFx {
         return new double[]{sh.x0 + sh.dx * s - sh.dy * side, sh.y0 + sh.dy * s + sh.dx * side};
     }
 
-    void render(Graphics2D g, int w, int h, double ms) {
-        // the set
-        double up = tvAmount(ms);
-        if (up > 0) {
-            Graphics2D t = (Graphics2D) g.create();
-            double slide = (1 - up) * h * 0.35;                              // it rises into the corner
-            Random shake = new Random((long) (ms / 40));
-            double jolt = up < 1 ? 0 : (shake.nextDouble() - 0.5) * 2;       // a faint tremble while it is on
-            t.translate(jolt, slide);
-            tv.draw(t, tvCx(w), tvBottom(h), tvW(h), ms, up);
-            t.dispose();
+    void render(Graphics2D g, int w, int h, double ms, Hand hand) {
+        // the set, in his hand for as long as he is there; it jerks in his fist while the snakes come out
+        double[] fist = hand.at(ms);
+        if (fist != null) {
+            double[] p = setPlace(fist, h);
+            double jerk = 0;
+            for (double m : marks) {
+                double age = ms - m;
+                if (age >= 0 && age < 260) jerk = Math.max(jerk, 1 - age / 260.0);
+            }
+            Random shake = new Random((long) (ms / 35));
+            tv.draw(g, p[0] + (shake.nextDouble() - 0.5) * h * 0.012 * jerk, p[1] - jerk * h * 0.012, tvW(h), ms, 1, false);
         }
         // the snakes
         List<Integer> live = new ArrayList<>();
@@ -136,8 +130,11 @@ final class SnakesFx {
         b.fillRect(0, 0, w, h);
         b.setComposite(AlphaComposite.SrcOver);
         b.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        double[] o = mouth(w, h);
-        for (int m : live) drawSnake(b, w, h, ms, marks.get(m), o, m % 2);
+        for (int m : live) {
+            double[] f = hand.at(marks.get(m));
+            if (f == null) continue;
+            drawSnake(b, w, h, ms, marks.get(m), mouth(f, h), m % 2);
+        }
         b.dispose();
         composite(g, w, h, ms);
     }

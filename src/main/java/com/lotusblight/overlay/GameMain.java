@@ -811,7 +811,7 @@ public final class GameMain {
                     Graphics2D cam = cameraGraphics(g, w, h, t);
                     hazards.renderSong2(cam, w, h, t);
                     cam.dispose();
-                    if (recordFile == null) snakes.render(g, w, h, t);
+                    if (recordFile == null) snakes.render(g, w, h, t, ms -> hazards.songTwoHand(ms, w, h));
                 }
             }
         }

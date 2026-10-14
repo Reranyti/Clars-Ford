@@ -160,6 +160,10 @@ final class Hazards {
     }
 
     /** The Glitcher in the second song's first minute: forms again, throws error windows, falls apart at 1:17. */
+    double[] songTwoHand(double ms, int w, int h) {
+        return actor.songTwoHand(ms, w, h);
+    }
+
     double[] songTwoHead(double ms, int w, int h) {
         return actor.songTwoHead(ms, w, h);
     }

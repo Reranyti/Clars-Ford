@@ -660,6 +660,11 @@ final class GlitcherActor {
         if (walking < 0.2) a.blendTurn(Rig15.Joint.HEAD, 8, 0, 0, 1 - walking / 0.2);      // just formed: a little dazed
         renderer.clearDirty();
         actor.draw(renderer, unit * ss, ox, oy);
+        if (actor.lastSkel != null) {                                          // where his right fist is, relative to his feet, in screen pixels
+            double[] hp = actor.onScreen(actor.lastSkel.endPoint(Rig15.Limb.R_ARM));
+            handDx = hp[0] * unit * scale;
+            handDy = hp[1] * unit * scale;
+        }
 
         Graphics2D b = (Graphics2D) g.create();
         b.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
@@ -672,6 +677,15 @@ final class GlitcherActor {
         b.setTransform(base);
         b.dispose();
 
+    }
+
+    private double handDx, handDy;
+
+    /** Where his right fist is in the second song ({x, y} in screen pixels), or null while he is not there; the TV is held in it. */
+    double[] songTwoHand(double ms, int w, int h) {
+        double reform = smooth((ms - 800) / 5_000.0), leave = smooth((ms - 73_500) / 3_500.0);
+        if (ms < 0 || Math.min(reform, 1 - leave) < 0.6) return null;
+        return new double[]{songTwoX(ms, w) + handDx, h * 0.9 - handDy};
     }
 
     /** Where his head is in the second song ({x, y}); in the middle of the screen once he is gone (the snakes then come out of the middle). */
