@@ -65,6 +65,7 @@ JDK = find_jdk()
 JAVA = str(JDK / "bin" / "java.exe")
 JAVAC = str(JDK / "bin" / "javac.exe")
 JARS = find_jars()
+NAMES_RU = {"phrases": "фразы", "snakes": "змеи", "columns": "колонки"}
 ROOTS = ["ExitMain", "GameMain", "RhythmMain", "AnimTools"]
 
 
@@ -162,6 +163,8 @@ class Lab:
 
     def _row(self, inner, items):
         for i, (label, fn) in enumerate(items):
+            if not label:
+                continue                         # an empty slot keeps the rows lined up
             self._button(inner, label, fn).grid(row=i // 4, column=i % 4, padx=3, pady=3, sticky="ew")
         for c in range(4):
             inner.grid_columnconfigure(c, weight=1)
@@ -179,8 +182,10 @@ class Lab:
         g2 = tk.Frame(g, bg=PANEL)
         g2.grid(row=1, column=0, columnspan=4, sticky="ew")
         self._row(g2, [("Разметить ФРАЗЫ (чёрные экраны)", lambda: self.run_record("phrases")), ("Разметить ЗМЕЙ", lambda: self.run_record("snakes")),
+                       ("Разметить КОЛОНКИ (有 / 线)", lambda: self.run_record("columns")), ("", lambda: None),
                        ("Показать записанное: фразы", lambda: self.show_taps("phrases")), ("Показать записанное: змеи", lambda: self.show_taps("snakes")),
-                       ("ПРИНЯТЬ фразы", self.accept_phrases), ("ПРИНЯТЬ змей", self.accept_snakes)])
+                       ("Показать записанное: колонки", lambda: self.show_taps("columns")), ("", lambda: None),
+                       ("ПРИНЯТЬ фразы", self.accept_phrases), ("ПРИНЯТЬ змей", self.accept_snakes), ("ПРИНЯТЬ колонки", self.accept_columns)])
         g = self._group("Весь бой", "Как в настоящей игре: сцена с ошибкой, потом три песни, урок, интерлюдия, финал. Со звуком и видео.")
         self._row(g, [("Весь бой", lambda: self.run_exit(chromo=False)), ("Весь бой (Хромо)", lambda: self.run_exit(chromo=True)),
                       ("Только сцена с ошибкой", lambda: self.run_exit(fight=False))])
@@ -278,7 +283,7 @@ class Lab:
         except ValueError:
             start = 0.0
         args = ["--song1", str(TRACKS / "song1.wav"), "--song2", str(TRACKS / "song2.wav"), "--start2", str(start), "--record", str(self._taps_file(name))]
-        self.launch("com.lotusblight.overlay.GameMain", args, f"Разметка: {'фразы' if name == 'phrases' else 'змеи'} (с {start:g} с)")
+        self.launch("com.lotusblight.overlay.GameMain", args, f"Разметка: {NAMES_RU.get(name, name)} (с {start:g} с)")
 
     def show_taps(self, name: str):
         taps = self._read_taps(name)
@@ -287,7 +292,7 @@ class Lab:
             return
         sec = [t / 1000 for t in taps]
         shown = ", ".join(f"{x:.2f}" for x in sec[:40]) + (" …" if len(sec) > 40 else "")
-        self.say(f"Записано {len(sec)} нажатий ({'фразы' if name == 'phrases' else 'змеи'}), секунды: {shown}")
+        self.say(f"Записано {len(sec)} нажатий ({NAMES_RU.get(name, name)}), секунды: {shown}")
 
     def accept_phrases(self):
         taps = self._read_taps("phrases")
@@ -304,6 +309,20 @@ class Lab:
         shutil.copy2(target, OUT / "phrases.txt.bak")
         target.write_text("".join(f"{t / 1000:.2f}\t{txt}\n" for t, txt in zip(taps, texts)), encoding="utf-8")
         self.say("Фразы приняты: " + ", ".join(f"{t / 1000:.2f}" for t in taps) + ". Копия старого: build/fight-lab/phrases.txt.bak. Пересоберу сам.")
+
+    def accept_columns(self):
+        taps = self._read_taps("columns")
+        if not taps:
+            self.say("Сначала размети колонки.")
+            return
+        if len(taps) % 2:
+            self.say(f"Нажатий {len(taps)}: нечётное. Колонки размечаются парами: нажатие = колонки появились, следующее = колонки исчезли.")
+            return
+        target = RES / "assets" / "lotusblight" / "overlay" / "columns.txt"
+        pairs = [(taps[i], taps[i + 1]) for i in range(0, len(taps), 2)]
+        target.write_text("# секунды: от, до (когда на краях экрана стоят колонки повторяющегося текста; размечено автором под музыку)\n"
+                          + "".join(f"{a / 1000:.3f}\t{b / 1000:.3f}\n" for a, b in pairs), encoding="utf-8")
+        self.say(f"Колонки приняты: {len(pairs)} промежутков: " + ", ".join(f"{a / 1000:.1f}-{b / 1000:.1f}" for a, b in pairs))
 
     def accept_snakes(self):
         taps = self._read_taps("snakes")
