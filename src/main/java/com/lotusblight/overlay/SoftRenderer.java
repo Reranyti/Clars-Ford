@@ -46,9 +46,24 @@ final class SoftRenderer {
         this.depth = new double[width * height];
     }
 
+    /** The colour of the light: what the lit side is multiplied by, and what the shadowed side keeps. 1,1,1 is the plain look. */
+    double[] key = {1, 1, 1};
+    double[] ambient = {1, 1, 1};
+    /** The box that has been drawn on since {@link #clear()} (for the finishing passes); empty when bx1 < bx0. */
+    int bx0, by0, bx1, by1;
+
     void clear() {
         Arrays.fill(pixels, 0);
         Arrays.fill(depth, Double.NEGATIVE_INFINITY);
+        bx0 = width;
+        by0 = height;
+        bx1 = -1;
+        by1 = -1;
+    }
+
+    void setLight(double[] key, double[] ambient) {
+        this.key = key;
+        this.ambient = ambient;
     }
 
     /**
@@ -155,14 +170,20 @@ final class SoftRenderer {
                 if ((texel >>> 24) < 128) continue;
                 depth[i] = z;
                 pixels[i] = shade(texel, light);
+                if (x < bx0) bx0 = x;
+                if (x > bx1) bx1 = x;
+                if (y < by0) by0 = y;
+                if (y > by1) by1 = y;
             }
         }
     }
 
-    private static int shade(int argb, double light) {
-        int r = (int) (((argb >> 16) & 0xFF) * light);
-        int g = (int) (((argb >> 8) & 0xFF) * light);
-        int b = (int) ((argb & 0xFF) * light);
+    private int shade(int argb, double light) {
+        // 0.55 of the light is ambient, the other 0.45 comes from the key light by how much the face turns to it.
+        double lit = Math.max(0, (light - 0.55) / 0.45);
+        int r = Math.min(255, (int) (((argb >> 16) & 0xFF) * (0.55 * ambient[0] + 0.45 * lit * key[0])));
+        int g = Math.min(255, (int) (((argb >> 8) & 0xFF) * (0.55 * ambient[1] + 0.45 * lit * key[1])));
+        int b = Math.min(255, (int) ((argb & 0xFF) * (0.55 * ambient[2] + 0.45 * lit * key[2])));
         return 0xFF000000 | r << 16 | g << 8 | b;
     }
 

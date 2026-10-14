@@ -87,6 +87,8 @@ final class ExitScene {
 
     // The stomp.
     private final List<Falling> falling = new ArrayList<>();
+    /** Dust thrown up where his foot lands: {x, y, vx, vy, size, age}. */
+    private final List<double[]> dust = new ArrayList<>();
     private int burstTicks;
 
     private Stage stage = Stage.ERROR;
@@ -235,14 +237,44 @@ final class ExitScene {
                 }
             }
             case STOMP -> {
-                if (t >= IMPACT && t - dt < IMPACT) burstTicks = 14;
+                if (t >= IMPACT && t - dt < IMPACT) {
+                    burstTicks = 14;
+                    spawnDust();
+                }
                 if (t >= IMPACT) moveFalling(t - IMPACT);
                 if (t >= STOMP_LEN) enter(Stage.DONE);
             }
             default -> {}
         }
         if (burstTicks > 0) burstTicks--;
+        moveDust(dt);
         updatePose();
+    }
+
+    /** Where his foot comes down in the stomp. */
+    private double footX() {
+        return w / 2.0 - 6 * scale;
+    }
+
+    private void spawnDust() {
+        for (int i = 0; i < 28; i++) {
+            double side = random.nextBoolean() ? 1 : -1;
+            double speed = h * (0.002 + random.nextDouble() * 0.010);
+            dust.add(new double[]{footX() + side * random.nextDouble() * scale * 3, floorY - random.nextDouble() * scale,
+                    side * speed, -h * (0.0008 + random.nextDouble() * 0.0035), h * (0.012 + random.nextDouble() * 0.02), 0});
+        }
+    }
+
+    private void moveDust(double dt) {
+        for (double[] d : dust) {
+            d[0] += d[2];
+            d[1] += d[3];
+            d[2] *= 0.965;
+            d[3] *= 0.98;
+            d[4] *= 1.012;
+            d[5] += dt;
+        }
+        dust.removeIf(d -> d[5] > 1.1);
     }
 
     private void enter(Stage next) {
@@ -456,8 +488,11 @@ final class ExitScene {
         }
 
         Graphics2D s = (Graphics2D) g.create();
-        if (stage == Stage.STOMP && t >= IMPACT && t < IMPACT + 0.6) {
-            double k = h * 0.012 * (1 - (t - IMPACT) / 0.6);
+        if (stage == Stage.STOMP && t >= IMPACT && t < IMPACT + 0.8) {
+            double k = h * 0.022 * Math.pow(1 - (t - IMPACT) / 0.8, 2);
+            s.translate((random.nextDouble() - 0.5) * 2 * k, (random.nextDouble() - 0.5) * 2 * k);
+        } else if (stage == Stage.SHATTER && t >= CRACK && t < CRACK + 0.5) {
+            double k = h * 0.014 * Math.pow(1 - (t - CRACK) / 0.5, 2);
             s.translate((random.nextDouble() - 0.5) * 2 * k, (random.nextDouble() - 0.5) * 2 * k);
         }
 
@@ -473,6 +508,8 @@ final class ExitScene {
         if (stage.ordinal() >= Stage.EMERGE.ordinal() && stage != Stage.DONE) drawGlitcher(s);
         if (stage.ordinal() >= Stage.TYPE.ordinal() && stage != Stage.DONE) drawLine(s);
         if (stage == Stage.STOMP) drawFalling(s);
+        drawShockwaves(s);
+        drawDust(s);
 
         switch (stage) {
             case ERROR -> hits = FakeWindows.drawDialog(s, dialog.x, dialog.y, dialog.width, dialog.height, TITLE, errorBody, OK);
@@ -498,6 +535,16 @@ final class ExitScene {
             int jx = random.nextInt(7) - 3, jy = random.nextInt(5) - 2;
             g.drawImage(broken, dialog.x + jx, dialog.y + jy, null);
             double grow = t / CRACK;
+            // the light behind the glass leaks out of the cracks
+            g.setStroke(new BasicStroke(9f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g.setColor(new Color(PURPLE_LIGHT & 0xFFFFFF | 0x50000000, true));
+            for (double[][] line : cracks) {
+                int n = 1 + (int) Math.ceil(grow * (line.length - 1));
+                for (int k = 1; k < n; k++) {
+                    g.drawLine(dialog.x + jx + (int) line[k - 1][0], dialog.y + jy + (int) line[k - 1][1],
+                            dialog.x + jx + (int) line[k][0], dialog.y + jy + (int) line[k][1]);
+                }
+            }
             g.setStroke(new BasicStroke(2f));
             g.setColor(new Color(255, 255, 255, 220));
             for (double[][] line : cracks) {
@@ -518,6 +565,16 @@ final class ExitScene {
             f.rotate(sh.angle);
             f.drawImage(broken, -sh.sw / 2, -sh.sh / 2, sh.sw - sh.sw / 2, sh.sh - sh.sh / 2,
                     sh.sx, sh.sy, sh.sx + sh.sw, sh.sy + sh.sh, null);
+            // glass: a bright edge on the side facing the light, a purple glint on the other, a sheen across the face
+            f.setStroke(new BasicStroke(1.6f));
+            f.setColor(new Color(255, 255, 255, 190));
+            f.drawLine(-sh.sw / 2, -sh.sh / 2, sh.sw - sh.sw / 2, -sh.sh / 2);
+            f.drawLine(-sh.sw / 2, -sh.sh / 2, -sh.sw / 2, sh.sh - sh.sh / 2);
+            f.setColor(new Color(PURPLE_LIGHT & 0xFFFFFF | 0x90000000, true));
+            f.drawLine(sh.sw - sh.sw / 2, -sh.sh / 2, sh.sw - sh.sw / 2, sh.sh - sh.sh / 2);
+            f.drawLine(-sh.sw / 2, sh.sh - sh.sh / 2, sh.sw - sh.sw / 2, sh.sh - sh.sh / 2);
+            f.setPaint(new java.awt.GradientPaint(-sh.sw / 2f, -sh.sh / 2f, new Color(255, 255, 255, 70), sh.sw / 2f, sh.sh / 2f, new Color(255, 255, 255, 0)));
+            f.fillRect(-sh.sw / 2, -sh.sh / 2, sh.sw, sh.sh);
             f.setTransform(old);
         }
         f.dispose();
@@ -531,6 +588,20 @@ final class ExitScene {
         if (open <= 0) return;
         double rh = h * 0.30 * open, rw = w * 0.05 * open;
         float glowR = (float) Math.max(1, rh * 0.9);
+        // rays out of the tear, turning slowly, each fading to nothing
+        for (int i = 0; i < 9; i++) {
+            double ang = clock * 0.35 * (i % 2 == 0 ? 1 : -1) + i * Math.PI * 2 / 9;
+            double len = rh * (0.9 + 0.5 * Math.abs(Math.sin(clock * 1.7 + i * 2.1)));
+            double spread = 0.07 + 0.03 * Math.sin(clock * 2.3 + i);
+            Path2D ray = new Path2D.Double();
+            ray.moveTo(riftX, riftY);
+            ray.lineTo(riftX + Math.cos(ang - spread) * len, riftY + Math.sin(ang - spread) * len * 0.8);
+            ray.lineTo(riftX + Math.cos(ang + spread) * len, riftY + Math.sin(ang + spread) * len * 0.8);
+            ray.closePath();
+            g.setPaint(new java.awt.GradientPaint((float) riftX, (float) riftY, new Color(0xB2, 0x5C, 0xFF, (int) (95 * open)),
+                    (float) (riftX + Math.cos(ang) * len), (float) (riftY + Math.sin(ang) * len * 0.8), new Color(0xB2, 0x5C, 0xFF, 0)));
+            g.fill(ray);
+        }
         g.setPaint(new RadialGradientPaint((float) riftX, (float) riftY, glowR, new float[]{0f, 1f},
                 new Color[]{new Color(0x73, 0x00, 0xFF, 150), new Color(0x73, 0x00, 0xFF, 0)}));
         g.fillOval((int) (riftX - glowR), (int) (riftY - glowR), (int) (glowR * 2), (int) (glowR * 2));
@@ -550,13 +621,28 @@ final class ExitScene {
         slit.closePath();
         g.setColor(Color.BLACK);
         g.fill(slit);
+        g.setColor(new Color(0xB2, 0x5C, 0xFF, (int) (70 * open)));
+        g.setStroke(new BasicStroke(11f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g.draw(slit);
         g.setColor(new Color(PURPLE_LIGHT));
         g.setStroke(new BasicStroke(3f));
+        g.draw(slit);
+        g.setColor(new Color(255, 255, 255, (int) (200 * open)));
+        g.setStroke(new BasicStroke(1.2f));
         g.draw(slit);
     }
 
     private void drawArchitectWindow(Graphics2D g, int i, double lt) {
         Rectangle r = windows[i];
+        Color tone = new Color(ORDER[i].text);
+        double glow = clamp((lt - 0.2) / 0.6, 0, 1) * (0.8 + 0.2 * Math.sin(clock * 2 + i * 2));
+        if (glow > 0) {
+            int gr = (int) (r.width * 0.62);
+            Graphics2D gg = (Graphics2D) g.create();
+            gg.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, (float) (0.46 * glow)));
+            gg.drawImage(glowSprite(i, tone), (int) r.getCenterX() - gr, (int) r.getCenterY() - gr, gr * 2, gr * 2, null);
+            gg.dispose();
+        }
         Graphics2D wg = popIn(g, r, lt);
         FakeWindows.drawFrame(wg, r.x, r.y, r.width, r.height, "");
         int bw = r.width - 1, bh = r.height - barH - 1;
@@ -567,6 +653,11 @@ final class ExitScene {
         double word = clamp((lt - 1.3) / 0.5, 0, 1);
         if (word > 0) drawWord(body, WORDS[i], new Color(ORDER[i].text), word, bw, bh);
         body.dispose();
+        double flash = 1 - clamp(lt / 0.28, 0, 1);                           // a white flash as the window arrives
+        if (flash > 0) {
+            wg.setColor(new Color(255, 255, 255, (int) (170 * flash)));
+            wg.fillRect(r.x, r.y, r.width, r.height);
+        }
         wg.dispose();
     }
 
@@ -607,6 +698,22 @@ final class ExitScene {
         return wg;
     }
 
+    private final BufferedImage[] glowSprites = new BufferedImage[3];
+
+    /** The soft coloured glow of a window, drawn once at a small size and scaled up (a screen-sized gradient every frame is too slow). */
+    private BufferedImage glowSprite(int i, Color tone) {
+        if (glowSprites[i] == null) {
+            BufferedImage im = new BufferedImage(128, 128, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D pg = im.createGraphics();
+            pg.setPaint(new RadialGradientPaint(64, 64, 64, new float[]{0f, 1f},
+                    new Color[]{new Color(tone.getRed(), tone.getGreen(), tone.getBlue(), 255), new Color(tone.getRed(), tone.getGreen(), tone.getBlue(), 0)}));
+            pg.fillRect(0, 0, 128, 128);
+            pg.dispose();
+            glowSprites[i] = im;
+        }
+        return glowSprites[i];
+    }
+
     private void drawWord(Graphics2D g, String word, Color color, double alpha, int bw, int bh) {
         Graphics2D t2 = (Graphics2D) g.create();
         t2.setFont(BASE_FONT.deriveFont(Font.BOLD, bh * 0.16f));
@@ -631,18 +738,108 @@ final class ExitScene {
             feetY = riftY + h * 0.06 + (floorY - riftY - h * 0.06) * p;
             k = 0.15 + 0.85 * p;
         }
+        // After the tear closes he lands: a short squash that settles.
+        double squash = stage == Stage.WINDOWS && t < 0.4 ? 0.07 * Math.sin(Math.PI * t / 0.4) * (1 - t / 0.4) * 2 : 0;
+        double shadowA = stage == Stage.EMERGE ? smooth((t / EMERGE_LEN - 0.35) / 0.65) : 1;
+        ActorFx.floorShadow(g, feetX, feetY + 0.6 * scale * k, 8 * scale * k, 1.4 * scale * k, 0.85 * shadowA);
         renderer.clear();
+        renderer.setLight(new double[]{1.2, 1.16, 1.45}, new double[]{0.8, 0.74, 1.0});
         double originX = renderer.width / 2.0, originY = renderer.height - 2 * scale;
         actor.draw(renderer, scale, originX, originY);
+        lightFigure(feetX, feetY, k);
         glitch.apply(renderer.pixels, renderer.width, renderer.height, glitchLevel());
         Graphics2D gg = (Graphics2D) g.create();
         gg.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-        gg.drawImage(renderer.image, (int) (feetX - originX * k), (int) (feetY - originY * k),
-                (int) (renderer.width * k), (int) (renderer.height * k), null);
+        double dw = renderer.width * k * (1 + squash * 0.6), dh = renderer.height * k * (1 - squash);
+        gg.drawImage(renderer.image, (int) (feetX - originX * k * (1 + squash * 0.6)), (int) (feetY - originY * k * (1 - squash)),
+                (int) dw, (int) dh, null);
         gg.dispose();
+        if (stage == Stage.WINDOWS && t < 0.6) drawRing(g, feetX, feetY, t / 0.6, w * 0.07, 0.35);       // the landing's small ripple
+    }
+
+    /** The coloured light on the edges of the figure: the purple of the tear, then the colour of each window as it lights. */
+    private void lightFigure(double feetX, double feetY, double k) {
+        int thick = Math.max(2, (int) Math.round(scale * k * 0.4));
+        double midY = feetY - 18 * scale * k;
+        if (stage == Stage.EMERGE) {
+            double open = 1 - smooth((t - (EMERGE_LEN - 0.5)) / 0.5);
+            ActorFx.rim(renderer, PURPLE_LIGHT, 0.95 * open, riftX - feetX, midY - riftY, thick + 1);
+            return;
+        }
+        if (stage == Stage.WINDOWS) ActorFx.rim(renderer, 0x9FB4FF, 0.35, -0.7, 0.8, thick);
+        // once all three are up, only the two at the sides light him (every extra light costs a pass over the picture)
+        int shown = stage == Stage.WINDOWS ? Math.min(3, (int) (t / WINDOW_LEN) + 1) : 2;
+        if (stage.ordinal() < Stage.WINDOWS.ordinal()) shown = 0;
+        for (int i = 0; i < shown; i++) {
+            double lt = stage == Stage.WINDOWS ? t - i * WINDOW_LEN : WINDOW_LEN;
+            double on = smooth((lt - 0.25) / 0.5);
+            double strength = stage == Stage.WINDOWS ? (i == shown - 1 ? 1 : 0.45) : (stage == Stage.TYPE || stage == Stage.SILENCE || stage == Stage.STOMP ? 0.3 : 0.5);
+            Rectangle r = windows[i];
+            ActorFx.rim(renderer, ORDER[i].text & 0xFFFFFF, 0.95 * on * strength, r.getCenterX() - feetX, midY - r.getCenterY(), thick);
+        }
+    }
+
+    /** One ring of light running out over the floor from a point (age 0..1). */
+    private void drawRing(Graphics2D g, double cx, double cy, double age, double maxR, double flat) {
+        if (age <= 0 || age >= 1) return;
+        double r = maxR * (1 - Math.pow(1 - age, 2.2));
+        int alpha = (int) (200 * Math.pow(1 - age, 1.6));
+        Graphics2D rg = (Graphics2D) g.create();
+        rg.clipRect(0, (int) (cy - r * flat * 1.15) - 4, w, (int) (r * flat * 2.3) + 8);        // only the band the ring lives in
+        rg.translate(cx, cy);
+        rg.scale(1, flat);
+        rg.setStroke(new BasicStroke((float) Math.max(1.5, h * 0.012 * (1 - age))));
+        rg.setColor(new Color(PURPLE_LIGHT & 0xFFFFFF | alpha / 2 << 24, true));
+        rg.draw(new java.awt.geom.Ellipse2D.Double(-r, -r, r * 2, r * 2));
+        rg.setColor(new Color(255, 255, 255, Math.min(255, alpha)));
+        rg.setStroke(new BasicStroke((float) Math.max(1f, h * 0.004 * (1 - age))));
+        rg.draw(new java.awt.geom.Ellipse2D.Double(-r, -r, r * 2, r * 2));
+        rg.dispose();
+    }
+
+    /** The rings of the dialog bursting and of the stomp. */
+    private void drawShockwaves(Graphics2D g) {
+        if (stage == Stage.SHATTER && t >= CRACK) {
+            double age = (t - CRACK) / 0.7;
+            drawRing(g, riftX, riftY, age, h * 0.55, 1);
+            drawRing(g, riftX, riftY, age - 0.12, h * 0.45, 1);
+        } else if (stage == Stage.STOMP && t >= IMPACT) {
+            double age = (t - IMPACT) / 0.9;
+            drawRing(g, footX(), floorY, age, w * 0.65, 0.16);
+            drawRing(g, footX(), floorY, age - 0.14, w * 0.5, 0.16);
+        }
+    }
+
+    private static BufferedImage puff;
+
+    /** One soft grey-violet puff, drawn once and scaled for every bit of dust (a gradient per particle costs too much). */
+    private static BufferedImage puff() {
+        if (puff == null) {
+            puff = new BufferedImage(64, 64, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D pg = puff.createGraphics();
+            pg.setPaint(new RadialGradientPaint(32, 32, 32, new float[]{0f, 1f},
+                    new Color[]{new Color(120, 100, 160, 255), new Color(120, 100, 160, 0)}));
+            pg.fillRect(0, 0, 64, 64);
+            pg.dispose();
+        }
+        return puff;
+    }
+
+    private void drawDust(Graphics2D g) {
+        if (dust.isEmpty()) return;
+        BufferedImage sprite = puff();
+        for (double[] d : dust) {
+            double life = 1 - d[5] / 1.1;
+            g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, (float) (0.45 * life)));
+            g.drawImage(sprite, (int) (d[0] - d[4]), (int) (d[1] - d[4]), (int) (d[4] * 2), (int) (d[4] * 2), null);
+        }
+        g.setComposite(AlphaComposite.SrcOver);
     }
 
     /** "Me=Deleted?" in the empty middle, typed out a letter at a time. */
+    private BufferedImage lineImg;
+    private String lineKey;
+
     private void drawLine(Graphics2D g) {
         int n = stage == Stage.TYPE ? Math.min(LINE.length(), (int) (t / TYPE_CHAR)) : LINE.length();
         String text = LINE.substring(0, n);
@@ -652,11 +849,37 @@ final class ExitScene {
         int full = t2.getFontMetrics().stringWidth(LINE + "_");
         int x = (int) (w * MIDDLE[0]) - full / 2, y = (int) (h * MIDDLE[1]) + t2.getFontMetrics().getAscent() / 3;
         String shown = text + (cursor ? "_" : "");
-        t2.setColor(new Color(0x73, 0x00, 0xFF, 120));
-        t2.drawString(shown, x - 3, y);
-        t2.drawString(shown, x + 3, y);
-        t2.setColor(Color.WHITE);
-        t2.drawString(shown, x, y);
+        double sinceLetter = stage == Stage.TYPE ? t % TYPE_CHAR : 1;
+        double flare = stage == Stage.TYPE && n > 0 && n < LINE.length() + 1 ? Math.max(0, 1 - sinceLetter / 0.08) : 0;
+        int split = (int) Math.max(3, h * 0.004 * (1 + 3 * flare));
+        // The layers (violet glow, red and cyan split, white) are drawn once for each string and split, then only blitted.
+        String key = shown + "|" + split;
+        int pad = 10, asc = t2.getFontMetrics().getAscent(), lineH = asc + t2.getFontMetrics().getDescent();
+        if (!key.equals(lineKey) || lineImg == null) {
+            lineKey = key;
+            lineImg = new BufferedImage(full + pad * 2 + split * 2, lineH + pad * 2, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D li = lineImg.createGraphics();
+            li.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            li.setFont(t2.getFont());
+            int lx = pad + split, ly = pad + asc;
+            li.setColor(new Color(0x73, 0x00, 0xFF, 70));
+            li.drawString(shown, lx - 5, ly - 3);
+            li.drawString(shown, lx + 5, ly - 3);
+            li.drawString(shown, lx - 5, ly + 3);
+            li.drawString(shown, lx + 5, ly + 3);
+            li.setColor(new Color(255, 40, 80, 150));
+            li.drawString(shown, lx - split, ly);
+            li.setColor(new Color(40, 220, 255, 150));
+            li.drawString(shown, lx + split, ly);
+            li.setColor(Color.WHITE);
+            li.drawString(shown, lx, ly);
+            li.dispose();
+        }
+        t2.drawImage(lineImg, x - pad - split, y - asc - pad, null);
+        if (flare > 0) {
+            t2.setColor(new Color(255, 255, 255, (int) (110 * flare)));
+            t2.drawString(shown, x + random.nextInt(3) - 1, y - 1);
+        }
         t2.dispose();
     }
 
@@ -667,13 +890,15 @@ final class ExitScene {
             if (since < f.delay) continue;
             float alpha = (float) clamp(1 - (since - f.delay) / 1.4, 0, 1);
             if (alpha <= 0) continue;
-            Graphics2D fg = (Graphics2D) g.create();
-            fg.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, alpha));
-            fg.translate(f.x, f.y);
-            fg.rotate(f.angle);
             int iw = f.icon.bounds.width, ih = f.icon.bounds.height;
-            fg.drawImage(f.icon.image, -iw / 2, -ih / 2, null);
-            fg.dispose();
+            for (int trail = 3; trail >= 0; trail--) {                      // ghosts behind it, along the way it came
+                Graphics2D fg = (Graphics2D) g.create();
+                fg.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, (float) (alpha * (trail == 0 ? 1 : 0.22 / trail))));
+                fg.translate(f.x - f.vx * trail * 2.2, f.y - f.vy * trail * 2.2);
+                fg.rotate(f.angle - f.spin * trail * 2.2);
+                fg.drawImage(f.icon.image, -iw / 2, -ih / 2, null);
+                fg.dispose();
+            }
         }
     }
 
