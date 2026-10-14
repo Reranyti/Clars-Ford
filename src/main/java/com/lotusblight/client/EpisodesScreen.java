@@ -77,6 +77,7 @@ public final class EpisodesScreen extends Screen {
     @Override
     protected void init() {
         cards.clear();
+        leaving = -1;               // coming back from an episode's menu: the cards are not "flying away" any more (it opened that menu again at once)
         enterAt = Util.getMillis();
         java.util.Arrays.fill(whooshed, false);
         int gap = (int) (width * 0.025);
