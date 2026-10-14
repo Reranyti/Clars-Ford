@@ -63,6 +63,24 @@ final class PhraseScreen {
         return out;
     }
 
+    private static String wordsFamily;
+
+    /** The plain sans-serif Chinese face the original uses (Microsoft YaHei on Windows), else whatever the system has for it. */
+    private static String wordsFont() {
+        if (wordsFamily == null) {
+            java.util.Set<String> have = new java.util.HashSet<>(java.util.Arrays.asList(
+                    java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames()));
+            wordsFamily = Font.DIALOG;
+            for (String f : new String[]{"Microsoft YaHei", "Microsoft YaHei UI", "Noto Sans CJK SC", "Noto Sans SC", "SimHei", "Arial Unicode MS"}) {
+                if (have.contains(f)) {
+                    wordsFamily = f;
+                    break;
+                }
+            }
+        }
+        return wordsFamily;
+    }
+
     private static double smooth(double x) {
         x = Math.max(0, Math.min(1, x));
         return x * x * (3 - 2 * x);
@@ -83,28 +101,41 @@ final class PhraseScreen {
         if (black <= 0) return;
         Graphics2D b = (Graphics2D) g.create();
         b.setComposite(AlphaComposite.SrcOver);
-        b.setColor(new Color(0, 0, 0, (int) Math.round(255 * black)));
+        b.setColor(new Color(2, 2, 8, (int) Math.round(255 * black)));       // the original's near-black, a breath of blue
         b.fillRect(0, 0, w, h);
         if (cur != null) {
             b.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             double age = ms - cur.from;
             double alpha = Math.min(1, age / 90.0) * (1 - smooth((ms - (cur.to - 120)) / 120.0));
-            float size = (float) (h * 0.14);
-            b.setFont(new Font(Font.DIALOG, Font.PLAIN, 12).deriveFont(size));
+            float size = (float) (h * 0.215);
+            b.setFont(new Font(wordsFont(), Font.PLAIN, 12).deriveFont(size));
             FontMetrics fm = b.getFontMetrics();
             while (fm.stringWidth(cur.text) > w * 0.86 && size > 12) {
                 size *= 0.92f;
                 b.setFont(b.getFont().deriveFont(size));
                 fm = b.getFontMetrics();
             }
-            int x = (w - fm.stringWidth(cur.text)) / 2, y = h / 2 + fm.getAscent() / 3;
-            int split = Math.max(2, (int) (h * 0.004));
-            b.setColor(new Color(255, 40, 80, (int) (110 * alpha)));
-            b.drawString(cur.text, x - split, y);
-            b.setColor(new Color(40, 220, 255, (int) (110 * alpha)));
-            b.drawString(cur.text, x + split, y);
-            b.setColor(new Color(255, 255, 255, (int) (255 * alpha)));
-            b.drawString(cur.text, x, y);
+            // The original draws its "……" as six big round dots, not as the font's small ones.
+            boolean dots = cur.text.endsWith("……");
+            String text = dots ? cur.text.substring(0, cur.text.length() - 2) : cur.text;
+            double dotD = h * 0.034, pitch = h * 0.052, dotGap = h * 0.02;
+            double dotsW = dots ? dotGap + pitch * 5 + dotD : 0;
+            double total = fm.stringWidth(text) + dotsW;
+            int x = (int) ((w - total) / 2), y = h / 2 + fm.getAscent() / 3;
+            boolean noSignal = cur.text.equals("\u65e0\u4fe1\u53f7");         // 无信号: red, and tipped over
+            if (noSignal) {
+                b.rotate(Math.toRadians(11), w / 2.0, h / 2.0);
+                b.setColor(new Color(255, 32, 40, (int) (255 * alpha)));
+            } else {
+                b.setColor(new Color(255, 255, 255, (int) (255 * alpha)));
+            }
+            // the strokes of the original are a little heavier than the plain face: drawn twice, half a pixel apart
+            b.drawString(text, x - 0.45f, (float) y);
+            b.drawString(text, x + 0.45f, (float) y);
+            if (dots) {
+                double dx = x + fm.stringWidth(text) + dotGap, dy = y - h * 0.047;
+                for (int i = 0; i < 6; i++) b.fill(new java.awt.geom.Ellipse2D.Double(dx + i * pitch, dy - dotD / 2, dotD, dotD));
+            }
         }
         b.dispose();
     }
