@@ -95,6 +95,7 @@ class Lab:
         self.auto = tk.BooleanVar(value=True)
         self.safe = tk.BooleanVar(value=False)
         self.start_s = tk.StringVar(value="0")
+        self.mark_s = tk.StringVar(value="30")
         self.last_change = 0.0
         self.q: queue.Queue = queue.Queue()      # what worker threads want done in the window: only the main thread touches it
         self.log_lines: list[str] = []
@@ -168,6 +169,18 @@ class Lab:
     # ------------------------------------------------------------------ what can be started
 
     def _presets(self):
+        g = self._group("Разметка под музыку (песня 2)",
+                        "Слушай песню и жми ПРОБЕЛ или КЛИК мышью на каждой нужной секунде. Время пишется в файл. Esc: пауза, Alt+F4: выход. "
+                        "Потом «Принять»: фразы запишутся в phrases.txt, змеи в snakes.txt.")
+        row = tk.Frame(g, bg=PANEL)
+        row.grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 4))
+        tk.Label(row, text="Начать песню с секунды:", bg=PANEL, fg=FG).pack(side="left")
+        tk.Entry(row, textvariable=self.mark_s, width=6, bg=BTN, fg=FG, insertbackground=FG, relief="flat").pack(side="left", padx=6)
+        g2 = tk.Frame(g, bg=PANEL)
+        g2.grid(row=1, column=0, columnspan=4, sticky="ew")
+        self._row(g2, [("Разметить ФРАЗЫ (чёрные экраны)", lambda: self.run_record("phrases")), ("Разметить ЗМЕЙ", lambda: self.run_record("snakes")),
+                       ("Показать записанное: фразы", lambda: self.show_taps("phrases")), ("Показать записанное: змеи", lambda: self.show_taps("snakes")),
+                       ("ПРИНЯТЬ фразы", self.accept_phrases), ("ПРИНЯТЬ змей", self.accept_snakes)])
         g = self._group("Весь бой", "Как в настоящей игре: сцена с ошибкой, потом три песни, урок, интерлюдия, финал. Со звуком и видео.")
         self._row(g, [("Весь бой", lambda: self.run_exit(chromo=False)), ("Весь бой (Хромо)", lambda: self.run_exit(chromo=True)),
                       ("Только сцена с ошибкой", lambda: self.run_exit(fight=False))])
@@ -241,6 +254,65 @@ class Lab:
         if self.safe.get():
             args += ["--no-minimize"]
         self.launch("com.lotusblight.overlay.ExitMain", args, f"Сцена/бой{' с ' + stage if stage else ''}")
+
+    # ------------------------------------------------------------------ marking to the music
+
+    def _taps_file(self, name: str) -> Path:
+        return TRACKS / f"taps_{name}.txt"                 # must stay inside "song-test": the game writes only there
+
+    def _read_taps(self, name: str) -> list[float]:
+        f = self._taps_file(name)
+        if not f.exists():
+            return []
+        out = []
+        for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                out.append(float(line.strip().replace(",", ".")))
+            except ValueError:
+                pass
+        return sorted(out)
+
+    def run_record(self, name: str):
+        try:
+            start = max(0.0, float(self.mark_s.get().replace(",", ".")))
+        except ValueError:
+            start = 0.0
+        args = ["--song1", str(TRACKS / "song1.wav"), "--song2", str(TRACKS / "song2.wav"), "--start2", str(start), "--record", str(self._taps_file(name))]
+        self.launch("com.lotusblight.overlay.GameMain", args, f"Разметка: {'фразы' if name == 'phrases' else 'змеи'} (с {start:g} с)")
+
+    def show_taps(self, name: str):
+        taps = self._read_taps(name)
+        if not taps:
+            self.say("Пока ничего не записано.")
+            return
+        sec = [t / 1000 for t in taps]
+        shown = ", ".join(f"{x:.2f}" for x in sec[:40]) + (" …" if len(sec) > 40 else "")
+        self.say(f"Записано {len(sec)} нажатий ({'фразы' if name == 'phrases' else 'змеи'}), секунды: {shown}")
+
+    def accept_phrases(self):
+        taps = self._read_taps("phrases")
+        target = RES / "assets" / "lotusblight" / "overlay" / "phrases.txt"
+        old = [l for l in target.read_text(encoding="utf-8").splitlines() if l.strip() and not l.startswith("#")]
+        texts = [l.split("\t", 1)[1] for l in old if "\t" in l]
+        if not taps:
+            self.say("Сначала размети фразы.")
+            return
+        if len(taps) != len(texts):
+            self.say(f"Нажатий {len(taps)}, а фраз {len(texts)}. Должно совпадать: нужно по одному нажатию на фразу, в порядке: " + " | ".join(texts))
+            return
+        OUT.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(target, OUT / "phrases.txt.bak")
+        target.write_text("".join(f"{t / 1000:.2f}\t{txt}\n" for t, txt in zip(taps, texts)), encoding="utf-8")
+        self.say("Фразы приняты: " + ", ".join(f"{t / 1000:.2f}" for t in taps) + ". Копия старого: build/fight-lab/phrases.txt.bak. Пересоберу сам.")
+
+    def accept_snakes(self):
+        taps = self._read_taps("snakes")
+        if not taps:
+            self.say("Сначала размети змей.")
+            return
+        target = RES / "assets" / "lotusblight" / "overlay" / "snakes.txt"
+        target.write_text("# секунды, когда из телика вылетают змеи (размечено автором под музыку)\n" + "".join(f"{t / 1000:.3f}\n" for t in taps), encoding="utf-8")
+        self.say(f"Змеи приняты: {len(taps)} моментов записано в snakes.txt.")
 
     def run_song1(self, at):
         args = ["--song", "1", "--audio", str(TRACKS / "song1.wav"), "--at", str(at)]

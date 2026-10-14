@@ -90,7 +90,7 @@ final class PhraseScreen {
             double age = ms - cur.from;
             double alpha = Math.min(1, age / 90.0) * (1 - smooth((ms - (cur.to - 120)) / 120.0));
             float size = (float) (h * 0.14);
-            b.setFont(new Font(Font.DIALOG, Font.BOLD, 12).deriveFont(size));
+            b.setFont(new Font(Font.DIALOG, Font.PLAIN, 12).deriveFont(size));
             FontMetrics fm = b.getFontMetrics();
             while (fm.stringWidth(cur.text) > w * 0.86 && size > 12) {
                 size *= 0.92f;

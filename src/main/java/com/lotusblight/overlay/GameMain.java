@@ -586,15 +586,20 @@ public final class GameMain {
             if (phase != Phase.SONG2) return;
             double t = clockMs();
             if (recordFile != null) {
-                taps++;
-                lastTapMs = t;
-                try {
-                    java.nio.file.Files.writeString(recordFile.toPath(), String.format(java.util.Locale.ROOT, "%.1f%n", t),
-                            java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
-                } catch (java.io.IOException ignored) { }
+                recordTap(t);
                 return;
             }
             contact.press(t);
+        }
+
+        /** Marking mode (--record): one more tap, in ms of the song, goes to the file. */
+        private void recordTap(double t) {
+            taps++;
+            lastTapMs = t;
+            try {
+                java.nio.file.Files.writeString(recordFile.toPath(), String.format(java.util.Locale.ROOT, "%.1f%n", t),
+                        java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+            } catch (java.io.IOException ignored) { }
         }
 
         private void recordHud(Graphics2D g, int w, int h, double t) {
@@ -608,7 +613,7 @@ public final class GameMain {
                 g.draw(new java.awt.geom.Ellipse2D.Double(w / 2.0 - r, h / 2.0 - r, r * 2, r * 2));
             }
             g.setFont(g.getFont().deriveFont(Font.BOLD, (float) (h * 0.03)));
-            String s1 = "ЗАПИСЬ БИТА — жми ПРОБЕЛ под бит.  Нажатий: " + taps + "   (" + String.format("%.1f", t / 1000.0) + " с)";
+            String s1 = "РАЗМЕТКА: жми ПРОБЕЛ или КЛИК под музыку.  Нажатий: " + taps + "   (" + String.format("%.1f", t / 1000.0) + " с)";
             int tw = g.getFontMetrics().stringWidth(s1);
             g.setColor(new Color(0, 0, 0, 190));
             g.drawString(s1, (w - tw) / 2 + 2, (int) (h * 0.9) + 2);
@@ -621,6 +626,10 @@ public final class GameMain {
                 int hit = pauseDialog.hit(x, y);
                 if (hit == PauseDialog.YES) leave(0);
                 else if (hit == PauseDialog.NO) resumeGame();
+                return;
+            }
+            if (recordFile != null && phase == Phase.SONG2) {
+                recordTap(clockMs());
                 return;
             }
             double t = clockMs();
@@ -702,7 +711,7 @@ public final class GameMain {
                         contact.renderBackdrop(g, w, h, t);
                         if (recordFile == null) contact.renderEye(g, w, h, t);
                         drawSong2(g, w, h, t);
-                        if (phraseScreen != null) phraseScreen.render(g, w, h, t);      // the words, on black, over everything
+                        if (phraseScreen != null && recordFile == null) phraseScreen.render(g, w, h, t);      // the words, on black, over everything
                         if (recordFile != null) recordHud(g, w, h, t);
                     }
                     if (!g2.alive()) end(Phase.DEFEAT);
