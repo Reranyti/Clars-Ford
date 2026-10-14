@@ -23,24 +23,42 @@ final class SnakesFx {
     private static final double STEP_MS = 46;               // the window jumps this often: it keeps freezing
     private static final int COPIES = 30;
 
-    private final List<Double> marks = new ArrayList<>();
+    private static final List<Double> MARKS = loadMarks();
+    private final List<Double> marks = MARKS;
     private final OldTv tv = new OldTv();
     private BufferedImage buf;
     private static List<BufferedImage> windows;
 
-    SnakesFx() {
+    private static List<Double> loadMarks() {
+        List<Double> out = new ArrayList<>();
         try (InputStream in = SnakesFx.class.getResourceAsStream("/assets/lotusblight/overlay/snakes.txt")) {
             if (in != null) {
                 BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
                 String line;
                 while ((line = r.readLine()) != null) {
                     if (line.isBlank() || line.startsWith("#")) continue;
-                    marks.add(Double.parseDouble(line.trim().split("\\s+")[0]) * 1000);
+                    out.add(Double.parseDouble(line.trim().split("\\s+")[0]) * 1000);
                 }
             }
         } catch (Exception ignored) {
             // no marks: no snakes
         }
+        return out;
+    }
+
+    /** 0..1: how much the Glitcher is showing the TV to the player (he turns to face us and lifts it while the snakes run). */
+    static double presenting(double ms) {
+        double best = 0;
+        for (double m : MARKS) {
+            double age = ms - m;
+            double a;
+            if (age < -160 || age > LIFE_MS + 300) continue;
+            if (age < 0) a = smooth((age + 160) / 160.0);
+            else if (age <= LIFE_MS) a = 1;
+            else a = 1 - smooth((age - LIFE_MS) / 300.0);
+            best = Math.max(best, a);
+        }
+        return best;
     }
 
     /** The error windows of the old kind (the same ones the Glitcher used to throw), in the fast form to draw scaled. */
@@ -65,19 +83,29 @@ final class SnakesFx {
 
     // ---- the set: the Glitcher carries it in his right hand
 
-    private static double tvW(int h) { return h * 0.34; }
+    private static double tvW(int h) { return h * 0.22; }
 
     /** The set's place for a fist at (x, y): it is gripped by its side, so it hangs a little above and in front of the fist. */
     private static double[] setPlace(double[] fist, int h) {
         double tvW = tvW(h), tvH = tvW * 0.56;
-        return new double[]{fist[0] + tvW * 0.28, fist[1] + tvH * 0.30};            // cx, bottom
+        return new double[]{fist[0] - tvW * 0.30, fist[1] + tvH * 0.12};            // cx, bottom: the fist is under the lower corner nearer the body
+    }
+
+    private static final double TILT = -0.12;                                       // the set is turned a little, as in the reference
+
+    /** A point of the set's picture (before the tilt) carried through the tilt about the middle of the set. */
+    private static double[] tilt(double[] p, double[] fist, int h) {
+        double[] place = setPlace(fist, h);
+        double cx = place[0], cy = place[1] - tvW(h) * 0.56 / 2;
+        double c = Math.cos(TILT), s = Math.sin(TILT), dx = p[0] - cx, dy = p[1] - cy;
+        return new double[]{cx + dx * c - dy * s, cy + dx * s + dy * c};
     }
 
     /** The middle of the TV's glass, where the snakes come out. */
     private static double[] mouth(double[] fist, int h) {
         double[] p = setPlace(fist, h);
         double[] gl = OldTv.glassOf(p[0], p[1], tvW(h), false);
-        return new double[]{gl[0] + gl[2] / 2, gl[1] + gl[3] / 2};
+        return tilt(new double[]{gl[0] + gl[2] / 2, gl[1] + gl[3] / 2}, fist, h);
     }
 
     private static double smooth(double x) {
@@ -115,7 +143,10 @@ final class SnakesFx {
                 if (age >= 0 && age < 260) jerk = Math.max(jerk, 1 - age / 260.0);
             }
             Random shake = new Random((long) (ms / 35));
-            tv.draw(g, p[0] + (shake.nextDouble() - 0.5) * h * 0.012 * jerk, p[1] - jerk * h * 0.012, tvW(h), ms, 1, false);
+            Graphics2D t = (Graphics2D) g.create();
+            t.rotate(TILT, p[0], p[1] - tvW(h) * 0.56 / 2);
+            tv.draw(t, p[0] + (shake.nextDouble() - 0.5) * h * 0.012 * jerk, p[1] - jerk * h * 0.012, tvW(h), ms, 1, false);
+            t.dispose();
         }
         // the snakes
         List<Integer> live = new ArrayList<>();

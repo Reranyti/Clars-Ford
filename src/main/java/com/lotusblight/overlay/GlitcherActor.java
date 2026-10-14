@@ -657,11 +657,19 @@ final class GlitcherActor {
         a.viewYaw = heading * 1.15 * walking;
         double phase = t * 2.6 * Math.PI;
         GlitcherPoses.walk(a, phase, walking, 0.2, t);
+        // Showing the TV (while the snakes run): he turns his front to the player and holds the TV out at the side at chest height, as in the reference.
+        double show = SnakesFx.presenting(ms);
+        a.viewYaw *= 1 - show;
+        // the arm with the TV: low by his side while he walks, up and out at chest height, bent, while he shows it
+        a.reach(Rig15.Limb.L_ARM, 6.0 + 3.5 * show, 13.0 + 7.5 * show, 4.5 + 1.5 * show, 1);
+        a.shapeL = Actor.Hand.GRIP;
+        a.fistL = 0.6;
+        if (show > 0.02) a.blendTurn(Rig15.Joint.HEAD, 4, 0, -5, show);
         if (walking < 0.2) a.blendTurn(Rig15.Joint.HEAD, 8, 0, 0, 1 - walking / 0.2);      // just formed: a little dazed
         renderer.clearDirty();
         actor.draw(renderer, unit * ss, ox, oy);
         if (actor.lastSkel != null) {                                          // where his right fist is, relative to his feet, in screen pixels
-            double[] hp = actor.onScreen(actor.lastSkel.endPoint(Rig15.Limb.R_ARM));
+            double[] hp = actor.onScreen(actor.lastSkel.endPoint(Rig15.Limb.L_ARM));
             handDx = hp[0] * unit * scale;
             handDy = hp[1] * unit * scale;
         }
@@ -681,7 +689,7 @@ final class GlitcherActor {
 
     private double handDx, handDy;
 
-    /** Where his right fist is in the second song ({x, y} in screen pixels), or null while he is not there; the TV is held in it. */
+    /** Where the fist holding the TV is in the second song ({x, y} in screen pixels), or null while he is not there. */
     double[] songTwoHand(double ms, int w, int h) {
         double reform = smooth((ms - 800) / 5_000.0), leave = smooth((ms - 73_500) / 3_500.0);
         if (ms < 0 || Math.min(reform, 1 - leave) < 0.6) return null;
