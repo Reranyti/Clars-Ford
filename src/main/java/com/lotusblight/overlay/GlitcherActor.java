@@ -645,6 +645,7 @@ final class GlitcherActor {
         double reform = smooth((ms - 800) / 5_000.0);
         double leave = smooth((ms - 73_500) / 3_500.0);
         double whole = Math.min(reform, 1 - leave);
+        whole = Math.min(whole, 1 - smooth((ms - 19_000) / 3_500.0));          // 0:19: the flat one comes apart, the solid one has come
         if (whole <= 0) return;
         double walking = walking2(ms);
         double scale = 0.85;

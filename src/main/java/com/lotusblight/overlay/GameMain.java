@@ -328,6 +328,7 @@ public final class GameMain {
         PhraseScreen phraseScreen;
         private final ColumnsFx columns = new ColumnsFx();
         private final SnakesFx snakes = new SnakesFx();
+        private GlitcherCloseup closeup;
         private final RhythmGame g1, g2;
         private final FinaleVideo anim;
         private final FakeWindows fakeWindows;
@@ -349,6 +350,7 @@ public final class GameMain {
         void setup(int[] glitcherSkin, int[] honchoSkin, int screenH) {
             this.glitcherSkin = glitcherSkin;
             this.honchoSkin = honchoSkin;
+            this.closeup = new GlitcherCloseup(glitcherSkin);
             this.fight = new FightScene(honchoSkin, glitcherSkin, screenH);
             this.screenHeight = screenH;
         }
@@ -713,6 +715,7 @@ public final class GameMain {
                         Graphics2D cam = cameraGraphics(g, w, h, t);
                         contact.renderBackdrop(cam, w, h, t);
                         if (recordFile == null) columns.render(cam, w, h, t);
+                        if (recordFile == null && closeup != null) closeup.render(cam, w, h, t);
                         cam.dispose();
                         if (recordFile == null) contact.renderEye(g, w, h, t);
                         drawSong2(g, w, h, t);
@@ -779,11 +782,13 @@ public final class GameMain {
         /** A copy of the graphics knocked over by the camera of the columns (a plain copy when there is none). */
         private Graphics2D cameraGraphics(Graphics2D g, int w, int h, double t) {
             Graphics2D c = (Graphics2D) g.create();
-            double[] cam = recordFile != null ? new double[]{0, 1} : columns.camera(t);
-            if (cam[0] != 0) {
-                c.translate(w / 2.0, h / 2.0);
-                c.rotate(cam[0]);
-                c.scale(cam[1], cam[1]);
+            if (recordFile != null) return c;
+            double[] k1 = columns.camera(t), k2 = closeup != null ? closeup.camera(t, w, h) : new double[]{0, 1, 0, 0};
+            double roll = k1[0] + k2[0], zoom = k1[1] * k2[1];
+            if (roll != 0 || zoom != 1 || k2[2] != 0 || k2[3] != 0) {
+                c.translate(w / 2.0 + k2[2], h / 2.0 + k2[3]);
+                c.rotate(roll);
+                c.scale(zoom, zoom);
                 c.translate(-w / 2.0, -h / 2.0);
             }
             return c;
@@ -811,7 +816,14 @@ public final class GameMain {
                     Graphics2D cam = cameraGraphics(g, w, h, t);
                     hazards.renderSong2(cam, w, h, t);
                     cam.dispose();
-                    if (recordFile == null) snakes.render(g, w, h, t, ms -> hazards.songTwoHand(ms, w, h));
+                    if (recordFile == null) {
+                        Graphics2D cam2 = cameraGraphics(g, w, h, t);
+                        snakes.render(cam2, w, h, t, ms -> {
+                            double[] c3 = closeup != null ? closeup.hand(ms, h) : null;
+                            return c3 != null ? c3 : hazards.songTwoHand(ms, w, h);
+                        });
+                        cam2.dispose();
+                    }
                 }
             }
         }

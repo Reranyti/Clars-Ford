@@ -83,11 +83,12 @@ final class SnakesFx {
 
     // ---- the set: the Glitcher carries it in his right hand
 
-    private static double tvW(int h) { return h * 0.22; }
+    /** The width of the set: the hand brings it along (the big figure holds a big one), else the size for the small one on the floor. */
+    private static double tvW(double[] fist, int h) { return fist.length > 2 ? fist[2] : h * 0.22; }
 
     /** The set's place for a fist at (x, y): it is gripped by its side, so it hangs a little above and in front of the fist. */
     private static double[] setPlace(double[] fist, int h) {
-        double tvW = tvW(h), tvH = tvW * 0.56;
+        double tvW = tvW(fist, h), tvH = tvW * 0.56;
         return new double[]{fist[0] - tvW * 0.30, fist[1] + tvH * 0.12};            // cx, bottom: the fist is under the lower corner nearer the body
     }
 
@@ -96,7 +97,7 @@ final class SnakesFx {
     /** A point of the set's picture (before the tilt) carried through the tilt about the middle of the set. */
     private static double[] tilt(double[] p, double[] fist, int h) {
         double[] place = setPlace(fist, h);
-        double cx = place[0], cy = place[1] - tvW(h) * 0.56 / 2;
+        double cx = place[0], cy = place[1] - tvW(fist, h) * 0.56 / 2;
         double c = Math.cos(TILT), s = Math.sin(TILT), dx = p[0] - cx, dy = p[1] - cy;
         return new double[]{cx + dx * c - dy * s, cy + dx * s + dy * c};
     }
@@ -104,7 +105,7 @@ final class SnakesFx {
     /** The middle of the TV's glass, where the snakes come out. */
     private static double[] mouth(double[] fist, int h) {
         double[] p = setPlace(fist, h);
-        double[] gl = OldTv.glassOf(p[0], p[1], tvW(h), false);
+        double[] gl = OldTv.glassOf(p[0], p[1], tvW(fist, h), false);
         return tilt(new double[]{gl[0] + gl[2] / 2, gl[1] + gl[3] / 2}, fist, h);
     }
 
@@ -144,8 +145,8 @@ final class SnakesFx {
             }
             Random shake = new Random((long) (ms / 35));
             Graphics2D t = (Graphics2D) g.create();
-            t.rotate(TILT, p[0], p[1] - tvW(h) * 0.56 / 2);
-            tv.draw(t, p[0] + (shake.nextDouble() - 0.5) * h * 0.012 * jerk, p[1] - jerk * h * 0.012, tvW(h), ms, 1, false);
+            t.rotate(TILT, p[0], p[1] - tvW(fist, h) * 0.56 / 2);
+            tv.draw(t, p[0] + (shake.nextDouble() - 0.5) * h * 0.012 * jerk, p[1] - jerk * h * 0.012, tvW(fist, h), ms, 1, false);
             t.dispose();
         }
         // the snakes
