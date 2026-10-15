@@ -43,38 +43,61 @@ final class GlitcherCloseup {
         for (double t = FULL_FROM; t < SCREAM_FROM - 100; t += 600) h.add(t);              // the pounding before the scream
         for (double t = SCREAM_TO + 500; t < SONG_END - 600; t += 600) h.add(t);           // and after it
         for (double t : ContactBreak.beatTimes()) if (t < EYES_TO) h.add(t);               // in the part with the eye: on every beat
-        // he does not pound without a stop: a series of blows, then a rest of a different kind each time
-        double[][] regions = {{FULL_FROM, SCREAM_FROM - 100, 7_400, 5_000}, {SCREAM_TO + 500, SONG_END, 7_600, 5_200}, {EYES_FROM, EYES_TO, 10_000, 7_400}};
-        List<double[]> r = new ArrayList<>();
+        // he does not pound without a stop: a series of blows (a different kind each time), then a rest of a different kind each time
+        double[][] regions = {{FULL_FROM, SCREAM_FROM - 100, 3.6, 5.2, 1.9, 2.8}, {SCREAM_TO + 500, SONG_END, 3.6, 5.2, 1.9, 2.8}, {EYES_FROM, EYES_TO, 5.0, 8.0, 2.0, 3.2}};
+        int[] order = {0, 3, 1, 5, 2, 6, 4};
+        Random rnd = new Random(1313);
+        int restN = 0, blowN = 0;
         for (double[] reg : regions) {
-            for (double s = reg[0]; s < reg[1]; s += reg[2]) {
-                double from = s + reg[3], to = Math.min(s + reg[2], reg[1]);
-                if (to - from > 900) r.add(new double[]{from, to, r.size() % 3});
+            double t = reg[0];
+            while (t < reg[1] - 700) {
+                double end = Math.min(reg[1], t + 1000 * (reg[2] + rnd.nextDouble() * (reg[3] - reg[2])));
+                segs.add(new Seg(t, end, false, blowN++ % 3));
+                t = end;
+                if (t >= reg[1] - 900) break;
+                end = Math.min(reg[1], t + 1000 * (reg[4] + rnd.nextDouble() * (reg[5] - reg[4])));
+                segs.add(new Seg(t, end, true, order[restN++ % order.length]));
+                t = end;
             }
         }
-        rests = r.toArray(new double[0][]);
         List<Double> kept = new ArrayList<>();
         for (double t : h) {
             boolean resting = false;
-            for (double[] z : rests) if (t >= z[0] - 250 && t < z[1]) resting = true;
+            for (Seg z : segs) if (z.rest && t >= z.from - 150 && t < z.to) resting = true;
             if (!resting) kept.add(t);
         }
         hits = new double[kept.size()];
         for (int i = 0; i < hits.length; i++) hits[i] = kept.get(i);
     }
 
-    /** Stretches between the series of blows: {from, to, kind}; kind 0 tired and bent over, 1 palm and forehead on the glass, 2 trying to say something. */
-    private final double[][] rests;
+    /** A stretch of the dance: a series of blows (sub 0 right fist, 1 the two fists in turn, 2 both together) or a rest (sub: 0 slumped, 1 palm on the glass, 2 claws, 3 speaking, 4 peering, 5 staggering back, 6 glancing about). */
+    private record Seg(double from, double to, boolean rest, int sub) {}
 
-    /** The rest he is in at a time: {weight 0..1, kind, progress 0..1}, or null. */
-    private double[] rest(double ms) {
-        for (double[] z : rests) {
-            if (ms >= z[0] - 250 && ms < z[1] + 300) {
-                double w = smooth((ms - (z[0] - 250)) / 450.0) * (1 - smooth((ms - z[1]) / 300.0));
-                return new double[]{w, z[2], (ms - z[0]) / (z[1] - z[0])};
-            }
-        }
+    private final List<Seg> segs = new ArrayList<>();
+
+    private Seg segAt(double ms) {
+        for (Seg z : segs) if (ms >= z.from && ms < z.to) return z;
         return null;
+    }
+
+    /** How strongly the rest of the moment holds him, 0..1: in over a short time before it, out after. */
+    private double restWeight(Seg z, double ms) {
+        if (z == null || !z.rest) return 0;
+        return smooth((ms - (z.from - 250)) / 450.0) * (1 - smooth((ms - z.to) / 300.0));
+    }
+
+    /** The rest holding him at a time (also just before it starts and just after it ends), or null. */
+    private Seg restAt(double ms) {
+        for (Seg z : segs) if (z.rest && ms >= z.from - 250 && ms < z.to + 300) return z;
+        return null;
+    }
+
+    /** Which fist the blow number i is struck with: 0 right, 1 left, 2 both. */
+    private int side(int i) {
+        if (i < 0 || i >= hits.length) return 0;
+        Seg z = segAt(hits[i]);
+        int sub = z == null ? 0 : z.sub;
+        return sub == 0 ? 0 : sub == 1 ? i % 2 : 2;
     }
 
     boolean active(double ms) {
@@ -109,26 +132,56 @@ final class GlitcherCloseup {
         return ans;
     }
 
-    /** {roll (rad), zoom, dx, dy (px)}: the whole picture is struck by every hit. */
+    /** {roll (rad), zoom, dx, dy (px)}: the whole picture is struck by every hit, leans with every stretch of the dance, and never stands still. */
     double[] camera(double ms, int w, int h) {
         if (!active(ms)) return new double[]{0, 1, 0, 0};
         int i = lastHit(ms);
         double age = i < 0 ? 1e9 : ms - hits[i];
-        double roll = 0, zoom = 1, dx = 0, dy = 0;
-        if (ms >= FULL_FROM && age < 400) {
-            double k = Math.exp(-age / 90.0);
+        double roll = 0.016 * Math.sin(ms / 1300.0) + 0.008 * Math.sin(ms / 470.0), zoom = 1 + 0.018 * Math.sin(ms / 900.0), dx = 0, dy = 0;
+        dx += h * 0.010 * Math.sin(ms / 1700.0);
+        dy += h * 0.008 * Math.sin(ms / 1100.0 + 1);
+        if (ms >= FULL_FROM) {
+            Seg z = null;
+            int zi = -1;
+            for (int k = 0; k < segs.size(); k++) if (ms >= segs.get(k).from && ms < segs.get(k).to) { z = segs.get(k); zi = k; break; }
+            if (z != null) {
+                double since = ms - z.from, len = z.to - z.from;
+                double whip = Math.exp(-since / 260.0);                                         // every new stretch starts with a whip of the camera
+                roll += (zi % 2 == 0 ? 1 : -1) * 0.07 * whip;
+                zoom *= 1 + 0.05 * whip;
+                if (!z.rest) {
+                    double dutch = (zi % 4 < 2 ? 1 : -1) * 0.035 * smooth(since / 500.0);       // a tilted horizon for the whole series
+                    roll += dutch;
+                    zoom *= 1 + 0.10 * smooth(since / Math.max(1, len));                         // and the camera creeps in as the series goes on
+                    if (z.sub == 2) dy += h * 0.012 * Math.sin(ms / 90.0);
+                } else {
+                    zoom *= 1 - 0.03 * smooth(since / 600.0);                                     // after the last blow it draws back
+                }
+            }
+        }
+        if (ms >= FULL_FROM && age < 500) {
+            double k = Math.exp(-age / 100.0), k2 = Math.exp(-age / 45.0);
             Random rnd = new Random((long) (ms / 22));
-            roll = (i % 2 == 0 ? 1 : -1) * 0.012 * k;
-            zoom = 1 + 0.045 * k;
-            dx = (rnd.nextDouble() - 0.5) * h * 0.024 * k;
-            dy = (rnd.nextDouble() - 0.5) * h * 0.024 * k;
+            roll += (i % 2 == 0 ? 1 : -1) * 0.034 * k;
+            zoom *= 1 + 0.11 * k2 - 0.025 * Math.exp(-Math.pow((age - 170) / 70.0, 2));         // punches in, then recoils a little
+            dx += (rnd.nextDouble() - 0.5) * h * 0.045 * k;
+            dy += (rnd.nextDouble() - 0.5) * h * 0.045 * k - h * 0.02 * k2;
         }
         if (ms >= SCREAM_FROM && ms < SCREAM_TO + 200) {                                     // the scream: a push in and a constant tremor
-            double s = smooth((ms - SCREAM_FROM) / 180.0) * (1 - smooth((ms - SCREAM_TO) / 200.0));
+            double sc = smooth((ms - SCREAM_FROM) / 180.0) * (1 - smooth((ms - SCREAM_TO) / 200.0));
             Random rnd = new Random((long) (ms / 20));
-            zoom *= 1 + 0.10 * s;
-            dx += (rnd.nextDouble() - 0.5) * h * 0.03 * s;
-            dy += (rnd.nextDouble() - 0.5) * h * 0.03 * s;
+            zoom *= 1 + 0.16 * sc;
+            roll += 0.05 * sc * Math.sin(ms / 38.0);
+            dx += (rnd.nextDouble() - 0.5) * h * 0.05 * sc;
+            dy += (rnd.nextDouble() - 0.5) * h * 0.05 * sc;
+        }
+        Seg rs = restAt(ms);
+        if (rs != null) {
+            double rw2 = restWeight(rs, ms);
+            if (rs.sub == 4) zoom *= 1 + 0.12 * rw2;
+            if (rs.sub == 5) roll += 0.05 * rw2 * Math.sin(ms / 650.0);
+            else roll += 0.012 * rw2 * Math.sin(ms / 700.0);
+            dy += rw2 * h * 0.006 * Math.sin(ms / 230.0);
         }
         return new double[]{roll, zoom, dx, dy};
     }
@@ -164,58 +217,131 @@ final class GlitcherCloseup {
         double hage = hi < 0 ? 1e9 : ms - hits[hi];
         actor.viewYaw = 0.07 * Math.sin(ms / 1100.0) + (ms >= FULL_FROM && hage < 400 ? (hi % 2 == 0 ? 1 : -1) * 0.05 * Math.exp(-hage / 120.0) : 0);
         actor.viewPitch = 0.03 * Math.sin(ms / 1700.0);
-        // the arm with the TV: up and out at chest height, bent
+        // ---- the dance: which blow he is winding up for, or which rest he is in
+        Seg rs = ms >= FULL_FROM ? restAt(ms) : null;
+        double rww = rs == null ? 0 : restWeight(rs, ms);
+        int kind = rs == null ? 0 : rs.sub;
+        double tr = rs == null ? 0 : (ms - rs.from) / 1000.0;                       // seconds into the rest
+        double pr = rs == null ? 0 : Math.max(0, Math.min(1, (ms - rs.from) / (rs.to - rs.from)));
+        int li = lastHit(anim);
+        double rr = 0.5, uu = 0;
+        int next = li + 1;
+        if (ms >= FULL_FROM && li >= 0 && next < hits.length) {
+            double spacing = Math.min(1200, hits[next] - hits[li]);
+            uu = Math.max(0, Math.min(1, (anim - hits[li]) / spacing));
+            rr = uu < 0.78 ? smooth(uu / 0.78) : 1 - smooth((uu - 0.78) / 0.22);
+        }
+        double[] down = {-4.5, 19.0, 15.0}, up = {-7.5, 30.0, 3.5}, guard = {-5.5, 14.0, 7.0};     // the blow comes forward, at the camera
+        int sd = side(next), sdPrev = side(li);
+        double[] armR = new double[3], armL = new double[3];
+        for (int k = 0; k < 3; k++) {
+            double strike = down[k] + (up[k] - down[k]) * rr;
+            double rest = down[k] + (guard[k] - down[k]) * smooth(uu * 2.2);                     // the fist that has struck comes back to guard
+            double mine = (sd == 0 || sd == 2) ? strike : (sdPrev == 0 || sdPrev == 2) ? rest : guard[k];
+            double his = (sd == 1 || sd == 2) ? strike : (sdPrev == 1 || sdPrev == 2) ? rest : guard[k];
+            armR[k] = mine;
+            armL[k] = k == 0 ? -his : his;                                                          // mirrored for the left arm
+        }
+        double hit = 1 - rr;                                                                         // 1 at the moment of the blow
+        double lunge = ms >= FULL_FROM ? hit * hit * hit : 0;
+        double lean = 7 * (1 - rr);
+        double headDip = 9 * (1 - rr);
+        double headYaw = 0, headRoll = 0;
+        double scaleMul = 1, dxScreen = 0;
+        Actor.Hand shape = Actor.Hand.GRIP;
+        double fist = 1;
+        double rootZ = 3.2 * lunge, rootY = -1.1 * lunge, rootX = 0;
+        if (ms >= FULL_FROM && rww < 1) {
+            // the body goes into every blow: the weight shifts from side to side, the shoulders swing round
+            double swing = (sd == 2 ? 0 : (sd == 1 ? 1 : -1)) * 14 * lunge * (1 - rww);
+            actor.blendTurn(Rig15.Joint.UPPER_TORSO, 0, swing, 0, 1);
+        }
+        if (rww > 0) {
+            double[][] calm = new double[2][3];
+            double t = ms / 1000.0;
+            double heave = Math.sin(t * 4.2) * 0.5 + 0.5;                                           // heavy, quick breathing
+            double wob = Math.sin(t * 2.3);
+            double[] leanTo = new double[1];
+            double l2 = 0, hd = 0, hy = 0, hrl = 0, rz = 0, ry = 0, rx = 0, sm = 1, dx = 0;
+            Actor.Hand sh = Actor.Hand.LOOSE;
+            double fs = 0;
+            switch (kind) {
+                case 0 -> {                                                                         // slumped, spent
+                    calm[0] = new double[]{-4, 8, 2};
+                    calm[1] = new double[]{4, 8, 2};
+                    l2 = 36 + 3 * heave; hd = 28; rz = 1; ry = -2.4 - 0.4 * heave; rx = 1.2 * Math.sin(t * 0.8); sm = 0.97;
+                    hy = 8 * Math.sin(t * 0.6); hrl = 5 * Math.sin(t * 0.7);
+                }
+                case 1 -> {                                                                         // palm on the glass, sliding slowly down; the forehead leans
+                    calm[0] = new double[]{-3, 27 - 12 * smooth(pr), 14.5};
+                    calm[1] = new double[]{4, 10, 3};
+                    l2 = 12; hd = 16 + 3 * heave; hrl = 6; rz = 4; ry = -0.8 * smooth(pr); sh = Actor.Hand.OPEN;
+                }
+                case 2 -> {                                                                         // claws drawn down the glass, one hand after the other
+                    calm[0] = new double[]{-4, 31 - 15 * ((t * 0.9) % 1), 14};
+                    calm[1] = new double[]{4, 31 - 15 * ((t * 0.9 + 0.5) % 1), 14};
+                    l2 = 14; hd = 20; rz = 3; ry = -0.6; sh = Actor.Hand.CLAW; fs = 0.25; hrl = 4 * Math.sin(t * 1.1);
+                }
+                case 3 -> {                                                                         // steps back, hand half-raised, looks about, tries to speak
+                    calm[0] = new double[]{-6 + 1.5 * wob, 18 + 1.5 * Math.sin(t * 1.7), 8};
+                    calm[1] = new double[]{5, 14, 5};
+                    l2 = 2; hd = -6 + 4 * Math.sin(t * 1.7); hy = 20 * Math.sin(t * 0.9); hrl = 5 * wob; rz = -3; sm = 0.9; dx = 0.05; sh = Actor.Hand.OPEN;
+                }
+                case 4 -> {                                                                         // comes right up to the glass, both palms flat, the face fills the view
+                    calm[0] = new double[]{-6, 24, 15};
+                    calm[1] = new double[]{6, 24, 15};
+                    l2 = 14; hd = 10; hy = 10 * Math.sin(t * 0.8); hrl = 4 * Math.sin(t * 1.3); rz = 8; sm = 1.15; sh = Actor.Hand.OPEN;
+                }
+                case 5 -> {                                                                         // staggers back as if struck, arms flung out
+                    calm[0] = new double[]{-9, 13, -2 + 1.5 * Math.sin(t * 5)};
+                    calm[1] = new double[]{9, 13, -2 + 1.5 * Math.sin(t * 5 + 2)};
+                    l2 = -14; hd = -8; rz = -6; rx = 3 * Math.sin(t * 1.4); sm = 0.86; dx = -0.06; hrl = 8 * Math.sin(t * 1.4);
+                }
+                default -> {                                                                        // glances about, jerking, twitching
+                    calm[0] = new double[]{-4, 10, 4};
+                    calm[1] = new double[]{4, 10, 4};
+                    int step = (int) Math.floor(t * 1.7);
+                    double jerk = ((step * 2654435761L >>> 7) % 5 - 2) / 2.0;                        // -1..1, changes at every step
+                    hy = 38 * jerk * smooth((t * 1.7 - step) * 6); l2 = 5; hd = -4 + 6 * Math.abs(jerk); hrl = 8 * jerk;
+                    rx = 0.6 * Math.sin(t * 25) * (Math.abs(jerk) > 0.9 ? 1 : 0);
+                }
+            }
+            for (int k = 0; k < 3; k++) {
+                armR[k] += (calm[0][k] - armR[k]) * rww;
+                armL[k] += (calm[1][k] - armL[k]) * rww;
+            }
+            lean += (l2 - lean) * rww;
+            headDip += (hd - headDip) * rww;
+            headYaw = hy * rww;
+            headRoll = hrl * rww;
+            rootZ += (rz - rootZ) * rww;
+            rootY += (ry - rootY) * rww - 0.35 * heave * rww;
+            rootX = rx * rww;
+            scaleMul = 1 + (sm - 1) * rww;
+            dxScreen = dx * rww;
+            if (rww > 0.5) {
+                shape = sh;
+                fist = fs;
+            }
+        }
+        actor.reach(Rig15.Limb.R_ARM, armR[0], armR[1], armR[2], 1);
+        actor.reach(Rig15.Limb.L_ARM, armL[0], armL[1], armL[2], 1);
+        actor.shapeR = shape;
+        actor.fistR = fist;
+        actor.shapeL = shape;
+        actor.fistL = fist;
+        p.rootPos[0] += rootX;
+        p.rootPos[1] += rootY;
+        p.rootPos[2] += rootZ;
+        actor.blendTurn(Rig15.Joint.UPPER_TORSO, lean, 0, 0, 1);                                      // leans into every blow
+        actor.blendTurn(Rig15.Joint.HEAD, headDip, headYaw, headRoll, 1);
+        // the arm with the TV: up and out at chest height, bent (over everything else)
         double show = SnakesFx.presenting(ms);
         if (show > 0.01) {
             actor.reach(Rig15.Limb.L_ARM, 10.0, 20.0, 6.5, show);
             actor.shapeL = show > 0.3 ? Actor.Hand.GRIP : Actor.Hand.LOOSE;
             actor.fistL = 0.6 * show;
         }
-        // the pounding arm: raised, then down hard on the beat
-        int li = lastHit(anim);
-        double rr = 0.5;
-        if (ms >= FULL_FROM && li >= 0 && li + 1 < hits.length) {
-            double spacing = Math.min(1200, hits[li + 1] - hits[li]);
-            double uu = Math.max(0, Math.min(1, (anim - hits[li]) / spacing));
-            rr = uu < 0.78 ? smooth(uu / 0.78) : 1 - smooth((uu - 0.78) / 0.22);
-        }
-        double[] down = {-4.5, 19.0, 15.0}, up = {-7.5, 30.0, 3.5};                  // the blow comes forward, at the camera
-        double[] rs = ms >= FULL_FROM ? rest(ms) : null;
-        double rww = rs == null ? 0 : rs[0];
-        int kind = rs == null ? 0 : (int) rs[1];
-        double pr = rs == null ? 0 : rs[2];
-        double[] arm = {down[0] + (up[0] - down[0]) * rr, down[1] + (up[1] - down[1]) * rr, down[2] + (up[2] - down[2]) * rr};
-        double[] calm;
-        if (kind == 1) {
-            calm = new double[]{-3.0, 24.0 - 1.5 * Math.sin(ms / 900.0), 14.5};                       // the palm lies on the glass, sliding a little
-        } else if (kind == 2) {
-            calm = new double[]{-5.5, 15.0 + 2.0 * smooth(Math.sin(ms / 700.0) * 0.5 + 0.5), 7.0};     // the hand half-raised, as if to explain
-        } else {
-            calm = new double[]{-4.0, 9.0, 3.0};                                                       // hangs, heavy
-        }
-        for (int k = 0; k < 3; k++) arm[k] += (calm[k] - arm[k]) * rww;
-        actor.reach(Rig15.Limb.R_ARM, arm[0], arm[1], arm[2], 1);
-        actor.shapeR = rww > 0.5 ? (kind == 1 ? Actor.Hand.OPEN : Actor.Hand.LOOSE) : Actor.Hand.GRIP;
-        actor.fistR = rww > 0.5 ? 0 : 1;
-        double lean = 7 * (1 - rr) * (1 - rww);
-        double headDip = 9 * (1 - rr) * (1 - rww);
-        if (rww > 0) {
-            double heave = Math.sin(ms / 1000.0 * 4.2) * 0.5 + 0.5;                                   // heavy, quick breathing
-            p.rootPos[1] += -0.35 * heave * rww;
-            if (kind == 0) {                                                                          // bent over, head hanging
-                lean += 16 * rww + 2.5 * heave * rww;
-                headDip += 18 * rww;
-            } else if (kind == 1) {                                                                   // the forehead leans to the glass
-                lean += 10 * rww;
-                headDip += 14 * rww + 3 * Math.sin(ms / 900.0) * rww;
-            } else {                                                                                  // lifts his head, glances about, tries to speak
-                lean += 4 * rww;
-                headDip += -4 * rww + 3 * Math.sin(ms / 420.0) * rww;
-                actor.blendTurn(Rig15.Joint.HEAD, 0, 10 * Math.sin(ms / 1300.0) * rww, 5 * Math.sin(ms / 900.0) * rww, 1);
-            }
-        }
-        actor.blendTurn(Rig15.Joint.UPPER_TORSO, lean, 0, 0, 1);                                      // leans into every blow
-        actor.blendTurn(Rig15.Joint.HEAD, headDip, 0, 0, 1);
         // the scream, and the head snapped round
         double scream = smooth((ms - SCREAM_FROM) / 200.0) * (1 - smooth((ms - SCREAM_TO + 150) / 200.0));
         double snap = smooth((ms - 56_900) / 90.0) * (1 - smooth((ms - 57_450) / 110.0));
@@ -226,6 +352,8 @@ final class GlitcherCloseup {
         double[] key = {1.2 * full, 1.16 * full, 1.45 * full}, amb = {0.8 * full, 0.74 * full, 1.0 * full};
         rend.clearDirty();
         rend.setLight(key, amb);
+        u *= scaleMul;
+        ox += dxScreen * w;
         actor.draw(rend, u * RES, ox * RES, oy * RES);
         int thick = Math.max(2, (int) Math.round(u * RES * 0.28));
         ActorFx.rim(rend, 0xA8C4FF, 0.9, -0.6, 0.8, thick);                                           // the edge of him against the dark
@@ -251,7 +379,7 @@ final class GlitcherCloseup {
             double[] top = proj(actor.lastSkel.headTop());
             drawMouth(b, ox + top[0] * u, oy - top[1] * u + u * 4.2, u, scream);
         }
-        if (rww > 0.6 && kind == 2 && actor.lastSkel != null) {                                         // a small mouth, opening and closing without a sound
+        if (rww > 0.6 && kind == 3 && actor.lastSkel != null) {                                         // a small mouth, opening and closing without a sound
             double[] top = proj(actor.lastSkel.headTop());
             double t = ms / 1000.0;
             double open = Math.max(0, Math.sin(t * 9.0) * Math.sin(t * 3.1 + 1)) * 0.22 * rww;
