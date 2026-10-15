@@ -18,14 +18,14 @@ import java.util.List;
  * the words stand alone on it. Nothing is to be hit meanwhile - the circles of those moments are taken out of the game
  * ({@link RhythmGame#skip}), so there is no damage and they do not count in the results.
  *
- * <p>A phrase lasts until the next one starts, but at most {@link #MAX_HOLD_MS}; the last one lasts a second.
+ * <p>A phrase lasts until the next one starts, but as long as it is sung (about 0.28 s a character, at most {@link #MAX_HOLD_MS}); a third column in phrases.txt sets the end exactly.
  * The look of the words is provisional until the original's is known.
  */
 final class PhraseScreen {
     private record Phrase(double from, double to, String text) {}
 
     private static final double MAX_HOLD_MS = 1_600;
-    private static final double LAST_HOLD_MS = 1_000;
+    private static final double PER_CHAR_MS = 280;
     private static final double OUT_MS = 140;           // how long the black takes to clear after the last words
 
     private final List<Phrase> phrases = new ArrayList<>();
@@ -33,6 +33,7 @@ final class PhraseScreen {
     PhraseScreen() {
         List<double[]> starts = new ArrayList<>();
         List<String> texts = new ArrayList<>();
+        List<Double> ends = new ArrayList<>();
         try (InputStream in = PhraseScreen.class.getResourceAsStream("/assets/lotusblight/overlay/phrases.txt")) {
             if (in != null) {
                 BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
@@ -51,8 +52,11 @@ final class PhraseScreen {
         }
         for (int i = 0; i < starts.size(); i++) {
             double from = starts.get(i)[0];
-            double hold = i + 1 < starts.size() ? Math.min(starts.get(i + 1)[0] - from, MAX_HOLD_MS) : LAST_HOLD_MS;
-            phrases.add(new Phrase(from, from + Math.max(200, hold), texts.get(i)));
+            String text = texts.get(i);
+            double sung = Math.min(MAX_HOLD_MS, 200 + PER_CHAR_MS * text.replace("…", "").length());      // roughly as long as it is sung
+            double hold = i + 1 < starts.size() ? Math.min(starts.get(i + 1)[0] - from, sung) : sung;
+            if (ends.get(i) > from) hold = ends.get(i) - from;                                              // the author's own end, if given
+            phrases.add(new Phrase(from, from + Math.max(200, hold), text));
         }
     }
 
