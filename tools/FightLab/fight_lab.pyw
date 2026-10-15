@@ -305,14 +305,43 @@ class Lab:
         if len(taps) == 2 * len(texts):
             rows = [(taps[2 * i], taps[2 * i + 1], texts[i]) for i in range(len(texts))]          # two taps a phrase: where it starts, where it ends
         elif len(taps) == len(texts):
-            rows = [(t, None, txt) for t, txt in zip(taps, texts)]
+            starts = [float(l.split("	")[0]) * 1000 for l in old if "	" in l]                   # one tap a phrase: the ends; the starts stay as they are
+            rows = [(st, t, txt) for st, t, txt in zip(starts, taps, texts)]
         else:
-            self.say(f"Нажатий {len(taps)}, а фраз {len(texts)}. Нужно по ДВА нажатия на фразу (начало и конец), по порядку: " + " | ".join(texts))
+            self.say(f"Нажатий {len(taps)}, а фраз {len(texts)}. Нужно по ОДНОМУ нажатию (конец фразы) или по два (начало и конец), по порядку: " + " | ".join(texts))
             return
         OUT.mkdir(parents=True, exist_ok=True)
         shutil.copy2(target, OUT / "phrases.txt.bak")
         target.write_text("".join(f"{a / 1000:.2f}\t{txt}" + (f"\t{b / 1000:.2f}" if b is not None else "") + "\n" for a, b, txt in rows), encoding="utf-8")
         self.say("Фразы приняты: " + ", ".join(f"{a / 1000:.2f}" + (f"-{b / 1000:.2f}" if b is not None else "") for a, b, _ in rows) + ". Копия старого: build/fight-lab/phrases.txt.bak. Пересоберу сам.")
+
+    def accept_columns(self):
+        taps = [t / 1000 for t in self._read_taps("columns")]
+        if not taps:
+            self.say("Сначала размети колонки.")
+            return
+        # One tap = one more sign in the columns; a pause of more than 0.8 s starts a new series. A tap far closer to the one before it than the
+        # usual step is a slip of the finger and is dropped.
+        steps = sorted(b - a for a, b in zip(taps, taps[1:]) if b - a < 0.8)
+        med = steps[len(steps) // 2] if steps else 0.3
+        clean, dropped = [taps[0]], []
+        for t in taps[1:]:
+            if t - clean[-1] < med * 0.75:
+                dropped.append(t)
+            else:
+                clean.append(t)
+        series = [[clean[0]]]
+        for a, b in zip(clean, clean[1:]):
+            if b - a > 0.8:
+                series.append([b])
+            else:
+                series[-1].append(b)
+        target = RES / "assets" / "lotusblight" / "overlay" / "columns.txt"
+        text = "# секунды: когда в колонках по краям экрана появляется следующий знак (размечено автором под музыку). Пустая строка: колонки сбросились.\n"
+        text += "\n".join("".join(f"{t:.3f}\n" for t in sr) for sr in series)
+        target.write_text(text, encoding="utf-8")
+        self.say(f"Колонки приняты: серий {len(series)}, знаков " + ", ".join(str(len(sr)) for sr in series) + f", шаг {med:.2f} с."
+                 + (f" Лишние нажатия убраны: {', '.join(f'{d:.2f}' for d in dropped)}." if dropped else ""))
 
     def accept_snakes(self):
         taps = self._read_taps("snakes")
