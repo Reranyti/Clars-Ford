@@ -40,10 +40,11 @@ final class PhraseScreen {
                 String line;
                 while ((line = r.readLine()) != null) {
                     if (line.isBlank() || line.startsWith("#")) continue;
-                    String[] p = line.split("\\t", 2);
-                    if (p.length == 2) {
+                    String[] p = line.split("\\t");
+                    if (p.length >= 2) {
                         starts.add(new double[]{Double.parseDouble(p[0].trim()) * 1000});
                         texts.add(p[1].trim());
+                        ends.add(p.length >= 3 ? Double.parseDouble(p[2].trim()) * 1000 : 0.0);          // an optional third column: where it ends, s
                     }
                 }
             }
