@@ -43,8 +43,38 @@ final class GlitcherCloseup {
         for (double t = FULL_FROM; t < SCREAM_FROM - 100; t += 600) h.add(t);              // the pounding before the scream
         for (double t = SCREAM_TO + 500; t < SONG_END - 600; t += 600) h.add(t);           // and after it
         for (double t : ContactBreak.beatTimes()) if (t < EYES_TO) h.add(t);               // in the part with the eye: on every beat
-        hits = new double[h.size()];
-        for (int i = 0; i < hits.length; i++) hits[i] = h.get(i);
+        // he does not pound without a stop: a series of blows, then a rest of a different kind each time
+        double[][] regions = {{FULL_FROM, SCREAM_FROM - 100, 7_400, 5_000}, {SCREAM_TO + 500, SONG_END, 7_600, 5_200}, {EYES_FROM, EYES_TO, 10_000, 7_400}};
+        List<double[]> r = new ArrayList<>();
+        for (double[] reg : regions) {
+            for (double s = reg[0]; s < reg[1]; s += reg[2]) {
+                double from = s + reg[3], to = Math.min(s + reg[2], reg[1]);
+                if (to - from > 900) r.add(new double[]{from, to, r.size() % 3});
+            }
+        }
+        rests = r.toArray(new double[0][]);
+        List<Double> kept = new ArrayList<>();
+        for (double t : h) {
+            boolean resting = false;
+            for (double[] z : rests) if (t >= z[0] - 250 && t < z[1]) resting = true;
+            if (!resting) kept.add(t);
+        }
+        hits = new double[kept.size()];
+        for (int i = 0; i < hits.length; i++) hits[i] = kept.get(i);
+    }
+
+    /** Stretches between the series of blows: {from, to, kind}; kind 0 tired and bent over, 1 palm and forehead on the glass, 2 trying to say something. */
+    private final double[][] rests;
+
+    /** The rest he is in at a time: {weight 0..1, kind, progress 0..1}, or null. */
+    private double[] rest(double ms) {
+        for (double[] z : rests) {
+            if (ms >= z[0] - 250 && ms < z[1] + 300) {
+                double w = smooth((ms - (z[0] - 250)) / 450.0) * (1 - smooth((ms - z[1]) / 300.0));
+                return new double[]{w, z[2], (ms - z[0]) / (z[1] - z[0])};
+            }
+        }
+        return null;
     }
 
     boolean active(double ms) {
@@ -150,11 +180,42 @@ final class GlitcherCloseup {
             rr = uu < 0.78 ? smooth(uu / 0.78) : 1 - smooth((uu - 0.78) / 0.22);
         }
         double[] down = {-4.5, 19.0, 15.0}, up = {-7.5, 30.0, 3.5};                  // the blow comes forward, at the camera
-        actor.reach(Rig15.Limb.R_ARM, down[0] + (up[0] - down[0]) * rr, down[1] + (up[1] - down[1]) * rr, down[2] + (up[2] - down[2]) * rr, 1);
-        actor.shapeR = Actor.Hand.GRIP;
-        actor.fistR = 1;
-        actor.blendTurn(Rig15.Joint.UPPER_TORSO, 7 * (1 - rr), 0, 0, 1);                              // leans into every blow
-        actor.blendTurn(Rig15.Joint.HEAD, 9 * (1 - rr), 0, 0, 1);
+        double[] rs = ms >= FULL_FROM ? rest(ms) : null;
+        double rww = rs == null ? 0 : rs[0];
+        int kind = rs == null ? 0 : (int) rs[1];
+        double pr = rs == null ? 0 : rs[2];
+        double[] arm = {down[0] + (up[0] - down[0]) * rr, down[1] + (up[1] - down[1]) * rr, down[2] + (up[2] - down[2]) * rr};
+        double[] calm;
+        if (kind == 1) {
+            calm = new double[]{-3.0, 24.0 - 1.5 * Math.sin(ms / 900.0), 14.5};                       // the palm lies on the glass, sliding a little
+        } else if (kind == 2) {
+            calm = new double[]{-5.5, 15.0 + 2.0 * smooth(Math.sin(ms / 700.0) * 0.5 + 0.5), 7.0};     // the hand half-raised, as if to explain
+        } else {
+            calm = new double[]{-4.0, 9.0, 3.0};                                                       // hangs, heavy
+        }
+        for (int k = 0; k < 3; k++) arm[k] += (calm[k] - arm[k]) * rww;
+        actor.reach(Rig15.Limb.R_ARM, arm[0], arm[1], arm[2], 1);
+        actor.shapeR = rww > 0.5 ? (kind == 1 ? Actor.Hand.OPEN : Actor.Hand.LOOSE) : Actor.Hand.GRIP;
+        actor.fistR = rww > 0.5 ? 0 : 1;
+        double lean = 7 * (1 - rr) * (1 - rww);
+        double headDip = 9 * (1 - rr) * (1 - rww);
+        if (rww > 0) {
+            double heave = Math.sin(ms / 1000.0 * 4.2) * 0.5 + 0.5;                                   // heavy, quick breathing
+            p.rootPos[1] += -0.35 * heave * rww;
+            if (kind == 0) {                                                                          // bent over, head hanging
+                lean += 16 * rww + 2.5 * heave * rww;
+                headDip += 18 * rww;
+            } else if (kind == 1) {                                                                   // the forehead leans to the glass
+                lean += 10 * rww;
+                headDip += 14 * rww + 3 * Math.sin(ms / 900.0) * rww;
+            } else {                                                                                  // lifts his head, glances about, tries to speak
+                lean += 4 * rww;
+                headDip += -4 * rww + 3 * Math.sin(ms / 420.0) * rww;
+                actor.blendTurn(Rig15.Joint.HEAD, 0, 10 * Math.sin(ms / 1300.0) * rww, 5 * Math.sin(ms / 900.0) * rww, 1);
+            }
+        }
+        actor.blendTurn(Rig15.Joint.UPPER_TORSO, lean, 0, 0, 1);                                      // leans into every blow
+        actor.blendTurn(Rig15.Joint.HEAD, headDip, 0, 0, 1);
         // the scream, and the head snapped round
         double scream = smooth((ms - SCREAM_FROM) / 200.0) * (1 - smooth((ms - SCREAM_TO + 150) / 200.0));
         double snap = smooth((ms - 56_900) / 90.0) * (1 - smooth((ms - 57_450) / 110.0));
@@ -189,6 +250,12 @@ final class GlitcherCloseup {
         if (scream > 0.15 && actor.lastSkel != null) {
             double[] top = proj(actor.lastSkel.headTop());
             drawMouth(b, ox + top[0] * u, oy - top[1] * u + u * 4.2, u, scream);
+        }
+        if (rww > 0.6 && kind == 2 && actor.lastSkel != null) {                                         // a small mouth, opening and closing without a sound
+            double[] top = proj(actor.lastSkel.headTop());
+            double t = ms / 1000.0;
+            double open = Math.max(0, Math.sin(t * 9.0) * Math.sin(t * 3.1 + 1)) * 0.22 * rww;
+            if (open > 0.02 && pr > 0.08) drawMouth(b, ox + top[0] * u, oy - top[1] * u + u * 4.2, u * 0.5, open * 2.2);
         }
         drawCracks(b, w, h, ms, u);
         // a white flash on each blow of the fist
