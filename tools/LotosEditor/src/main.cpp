@@ -393,7 +393,8 @@ struct Preview {
     std::atomic<bool> ready{false}, busy{false}, failed{false};
     std::string state = "Запускаю игровое превью…";
     std::mutex lock;
-    std::vector<unsigned char> png;       // the newest picture that has come, not yet shown
+    std::vector<unsigned char> png;       // the newest picture that has come (raw pixels), not yet shown
+    int rawW = 0, rawH = 0;
     bool fresh = false;
     GLuint tex = 0;
     int texW = 0, texH = 0;
@@ -486,8 +487,10 @@ struct Preview {
                     if (!readAll(fromJava, b.data(), n)) break;
                     {
                         std::lock_guard<std::mutex> g(lock);
-                        if (b[0] == 0) {                                            // a picture
-                            png.assign(b.begin() + 1, b.end());
+                        if (b[0] == 3 && b.size() > 9) {                            // a picture: width, height, then the pixels as B G R A
+                            rawW = (b[1] << 24) | (b[2] << 16) | (b[3] << 8) | b[4];
+                            rawH = (b[5] << 24) | (b[6] << 16) | (b[7] << 8) | b[8];
+                            png.assign(b.begin() + 9, b.end());
                             fresh = true;
                         } else if (b[0] == 1) {                                     // the layer under the point
                             pickAnswer.assign((const char*) b.data() + 1, b.size() - 1);
@@ -519,6 +522,8 @@ struct Preview {
         return true;
     }
 
+    bool keepLayers = true;
+
     void ask(double t, int w, int h, bool force) {
         if (!ready || busy) return;
         char line[160];
@@ -533,7 +538,7 @@ struct Preview {
             return;
         }
         if (!force && t == askedT && w == askedW && h == askedH) return;
-        int n = std::snprintf(line, sizeof line, "R %.1f %d %d\n", t * 1000.0, w, h);
+        int n = std::snprintf(line, sizeof line, "R %.1f %d %d %d\n", t * 1000.0, w, h, keepLayers ? 1 : 0);
         DWORD wrote = 0;
         busy = true;
         if (!WriteFile(toJava, line, n, &wrote, nullptr)) {
@@ -555,15 +560,18 @@ struct Preview {
             b.swap(png);
             fresh = false;
         }
-        int w, h, ch;
-        unsigned char* px = stbi_load_from_memory(b.data(), (int) b.size(), &w, &h, &ch, 4);
-        if (!px) return;
+        int w, h;
+        {
+            std::lock_guard<std::mutex> g(lock);
+            w = rawW;
+            h = rawH;
+        }
+        if (w <= 0 || h <= 0 || b.size() < (size_t) w * h * 4) return;
         if (!tex) glGenTextures(1, &tex);
         glBindTexture(GL_TEXTURE_2D, tex);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_BGRA, GL_UNSIGNED_BYTE, b.data());
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        stbi_image_free(px);
         texW = w;
         texH = h;
     }
@@ -1087,6 +1095,7 @@ void monitorBody() {
             if (wasDown && !down) gForceAsk = true;
             wasDown = down;
             int qw = (gPlaying || down) ? 960 : (w >= 1000 ? 1920 : 1280), qh = qw * 9 / 16;
+            gPreview.keepLayers = !gPlaying;
             gPreview.ask(gHead, qw, qh, gForceAsk);
             gForceAsk = false;
             std::string pr;
@@ -1384,11 +1393,38 @@ int main(int argc, char** argv) {
             Sleep(100);
             std::lock_guard<std::mutex> g(gPreview.lock);
             if (gPreview.fresh) {
-                std::ofstream o(argv[2], std::ios::binary);
-                o.write((const char*) gPreview.png.data(), (std::streamsize) gPreview.png.size());
-                std::printf("frame written: %zu bytes\n", gPreview.png.size());
+                std::vector<unsigned char> rgba(gPreview.png.size());
+                for (size_t i = 0; i + 3 < rgba.size(); i += 4) {
+                    rgba[i] = gPreview.png[i + 2];
+                    rgba[i + 1] = gPreview.png[i + 1];
+                    rgba[i + 2] = gPreview.png[i];
+                    rgba[i + 3] = 255;
+                }
+                stbi_write_png(argv[2], gPreview.rawW, gPreview.rawH, 4, rgba.data(), gPreview.rawW * 4);
+                std::printf("frame written: %dx%d\n", gPreview.rawW, gPreview.rawH);
                 break;
             }
+        }
+        // how many pictures a second the game's side can give through the pipe
+        struct Case { int w, h; bool keep; } cases[] = {{960, 540, false}, {1920, 1080, false}, {1920, 1080, true}};
+        for (Case c : cases) {
+            int got = 0;
+            DWORD t0 = GetTickCount();
+            double t = 45.0;
+            gPreview.keepLayers = c.keep;
+            while (GetTickCount() - t0 < 4000) {
+                gPreview.ask(t, c.w, c.h, true);
+                {
+                    std::lock_guard<std::mutex> g(gPreview.lock);
+                    if (gPreview.fresh) {
+                        gPreview.fresh = false;
+                        got++;
+                        t += 0.04;
+                    }
+                }
+                Sleep(1);
+            }
+            std::printf("%dx%d keep=%d: %.1f pictures a second\n", c.w, c.h, c.keep ? 1 : 0, got / 4.0);
         }
         gPreview.stop();
         return 0;

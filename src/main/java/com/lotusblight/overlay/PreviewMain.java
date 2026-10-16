@@ -38,6 +38,7 @@ public final class PreviewMain {
 
         DataOutputStream out = new DataOutputStream(raw);
         BufferedImage frame = null;
+        byte[] bytes = null;
         BufferedReader r = new BufferedReader(new InputStreamReader(System.in, "UTF-8"));
         String line;
         while ((line = r.readLine()) != null) {
@@ -72,18 +73,23 @@ public final class PreviewMain {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setColor(new Color(6, 6, 14));
             g.fillRect(0, 0, w, h);
-            Layers.keep = Layers.newKeep();
+            boolean keepLayers = p.length < 5 || !p[4].equals("0");                    // the layers are kept (for picking) only when the picture stands still
+            Layers.keep = keepLayers ? Layers.newKeep() : null;
             try {
                 render(g, w, h, t, contact, columns, closeup, hazards[0], snakes, phrases);
             } catch (RuntimeException e) {
                 e.printStackTrace();
             }
             g.dispose();
-            ByteArrayOutputStream png = new ByteArrayOutputStream();
-            javax.imageio.ImageIO.write(frame, "png", png);
-            out.writeInt(png.size() + 1);
-            out.writeByte(0);
-            out.write(png.toByteArray());
+            int[] px = ((java.awt.image.DataBufferInt) frame.getRaster().getDataBuffer()).getData();
+            if (bytes == null || bytes.length != px.length * 4) bytes = new byte[px.length * 4];
+            java.nio.IntBuffer ib = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN).asIntBuffer();
+            for (int i = 0; i < px.length; i++) ib.put(i, px[i] | 0xFF000000);        // B, G, R, A in the bytes
+            out.writeInt(bytes.length + 9);
+            out.writeByte(3);
+            out.writeInt(w);
+            out.writeInt(h);
+            out.write(bytes);
             out.flush();
         }
     }
@@ -102,7 +108,7 @@ public final class PreviewMain {
         return c;
     }
 
-    private static void render(Graphics2D g, int w, int h, double t, ContactBreak contact, ColumnsFx columns, GlitcherCloseup closeup,
+    static void render(Graphics2D g, int w, int h, double t, ContactBreak contact, ColumnsFx columns, GlitcherCloseup closeup,
                                Hazards hazards, SnakesFx snakes, PhraseScreen phrases) {
         contact.update(t);
         Graphics2D cam = camera(g, w, h, t, columns, closeup);

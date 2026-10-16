@@ -34,9 +34,14 @@ final class GlitchBackdrop {
             new Color(0x10F0FF), new Color(0xFFE010), new Color(0xFF6A00), new Color(0x8A10FF),
             new Color(0x000000), new Color(0x000000)};
 
-    private final BufferedImage acc = new BufferedImage(LW, LH, BufferedImage.TYPE_INT_ARGB);
-    private final BufferedImage work = new BufferedImage(LW, LH, BufferedImage.TYPE_INT_ARGB);
-    private final BufferedImage split = new BufferedImage(LW, LH, BufferedImage.TYPE_INT_ARGB);
+    private final BufferedImage acc = new BufferedImage(LW, LH, BufferedImage.TYPE_INT_RGB);          // the working pictures are opaque: no alpha to carry
+    private final BufferedImage work = new BufferedImage(LW, LH, BufferedImage.TYPE_INT_RGB);
+    private final BufferedImage split = new BufferedImage(LW, LH, BufferedImage.TYPE_INT_ARGB_PRE);          // premultiplied: Java2D scales it much faster
+    private BufferedImage big;
+    private int bigW, bigH;
+    private long bigFrame;
+    private BufferedImage shade;                                                                                 // the scan lines and the dark middle, drawn once for a size
+    private int shadeW, shadeH;
     private long lastFrame = Long.MIN_VALUE;
     private boolean noWall, noWindows;
 
@@ -55,17 +60,40 @@ final class GlitchBackdrop {
             step(frame);
             lastFrame = frame;
         }
+        // The picture changes only when a new step is made (a dozen times a second): scaled to the screen with the scan lines once, then just laid down.
+        if (big == null || bigW != w || bigH != h) {
+            big = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB_PRE);
+            bigW = w;
+            bigH = h;
+            bigFrame = Long.MIN_VALUE;
+        }
+        if (bigFrame != lastFrame || shade == null) {
+            if (shade == null || shadeW != w || shadeH != h) {
+                shade = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB_PRE);
+                Graphics2D sg = shade.createGraphics();
+                sg.setColor(new Color(0, 0, 0, 55));
+                for (int y = 0; y < h; y += 4) sg.fillRect(0, y, w, 1);         // scan lines
+                sg.setPaint(new RadialGradientPaint((float) (w / 2.0), (float) (h / 2.0), (float) (h * 0.78), new float[]{0f, 0.6f, 1f},
+                        new Color[]{new Color(0, 0, 0, 70), new Color(0, 0, 0, 40), new Color(0, 0, 0, 0)}));   // darker over the middle, so the circles read
+                sg.fillRect(0, 0, w, h);
+                sg.dispose();
+                shadeW = w;
+                shadeH = h;
+            }
+            Graphics2D bg = big.createGraphics();
+            bg.setComposite(AlphaComposite.Clear);
+            bg.fillRect(0, 0, w, h);
+            bg.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            bg.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.92f));
+            bg.drawImage(split, 0, 0, w, h, null);
+            bg.setComposite(AlphaComposite.SrcOver);
+            bg.drawImage(shade, 0, 0, null);
+            bg.dispose();
+            bigFrame = lastFrame;
+        }
         Graphics2D o = (Graphics2D) g.create();
-        o.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-        o.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, (float) (0.92 * amount)));
-        o.drawImage(split, 0, 0, w, h, null);
         o.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, (float) amount));
-        // Scan lines, then a darkening over the middle so the circles stay clear to read.
-        o.setColor(new Color(0, 0, 0, 55));
-        for (int y = 0; y < h; y += 4) o.fillRect(0, y, w, 1);
-        o.setPaint(new RadialGradientPaint((float) (w / 2.0), (float) (h / 2.0), (float) (h * 0.78), new float[]{0f, 0.6f, 1f},
-                new Color[]{new Color(0, 0, 0, 70), new Color(0, 0, 0, 40), new Color(0, 0, 0, 0)}));
-        o.fillRect(0, 0, w, h);
+        o.drawImage(big, 0, 0, null);
         o.dispose();
     }
 

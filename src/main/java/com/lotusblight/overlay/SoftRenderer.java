@@ -36,6 +36,8 @@ final class SoftRenderer {
     final int height;
     final BufferedImage image;
     final int[] pixels;
+    /** The same pixels seen as premultiplied: {@link #premultiply()} turns them over, and then this is what to scale onto the screen. */
+    final BufferedImage imagePre;
     private final float[] depth;
 
     SoftRenderer(int width, int height) {
@@ -43,6 +45,11 @@ final class SoftRenderer {
         this.height = height;
         this.image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         this.pixels = ((DataBufferInt) image.getRaster().getDataBuffer()).getData();
+        java.awt.image.DataBufferInt db = new java.awt.image.DataBufferInt(pixels, pixels.length);
+        java.awt.image.WritableRaster wr = java.awt.image.Raster.createPackedRaster(db, width, height, width, new int[]{0xFF0000, 0xFF00, 0xFF, 0xFF000000}, null);
+        java.awt.image.ColorModel pre = new java.awt.image.DirectColorModel(java.awt.color.ColorSpace.getInstance(java.awt.color.ColorSpace.CS_sRGB),
+                32, 0xFF0000, 0xFF00, 0xFF, 0xFF000000, true, java.awt.image.DataBuffer.TYPE_INT);
+        this.imagePre = new BufferedImage(pre, wr, true, null);
         this.depth = new float[width * height];
     }
 
@@ -177,6 +184,19 @@ final class SoftRenderer {
             SkinModel.Face legacy = new SkinModel.Face(SkinModel.Part.BODY, null, face.u0(), face.v0(), face.u1(), face.v1());
             triangle(s[0], s[1], s[2], uv[0], uv[1], uv[2], legacy, skin, light);
             triangle(s[0], s[2], s[3], uv[0], uv[2], uv[3], legacy, skin, light);
+        }
+    }
+
+    /** Turns the pixels into premultiplied ones, in place, over the part that was drawn on (after this only {@link #imagePre} may be shown). */
+    void premultiply() {
+        int y0 = Math.max(0, by0), y1 = Math.min(height - 1, by1), x0 = Math.max(0, bx0), x1 = Math.min(width - 1, bx1);
+        for (int y = y0; y <= y1; y++) {
+            for (int i = y * width + x0, e = y * width + x1; i <= e; i++) {
+                int p = pixels[i], a = p >>> 24;
+                if (a == 255 || a == 0) continue;
+                int r = ((p >> 16 & 255) * a + 127) / 255, g = ((p >> 8 & 255) * a + 127) / 255, b = ((p & 255) * a + 127) / 255;
+                pixels[i] = a << 24 | r << 16 | g << 8 | b;
+            }
         }
     }
 

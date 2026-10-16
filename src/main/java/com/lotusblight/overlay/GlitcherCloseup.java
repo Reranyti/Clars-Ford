@@ -28,6 +28,7 @@ final class GlitcherCloseup {
     private static final double STUCK_LOOP_MS = 330;
     /** The size of the soft-rendered figure against the screen: small in the game (it is blocky by nature), raised by the editor for a still picture. */
     static double RES = 0.42;
+    static final long[] PROF = new long[5];
     /** The camera stands this far from the figure, in skin units: near enough for the fist that hits to come right at it. */
     private static final double CAM = 46;
 
@@ -379,17 +380,28 @@ final class GlitcherCloseup {
         rend.setLight(key, amb);
         u *= scaleMul;
         ox += dxScreen * w;
+        long pf0 = System.nanoTime();
         actor.draw(rend, u * RES, ox * RES, oy * RES);
+        long pf1 = System.nanoTime();
         int thick = Math.max(2, (int) Math.round(u * RES * 0.28));
         ActorFx.rim(rend, 0xA8C4FF, 0.9, -0.6, 0.8, thick);                                           // the edge of him against the dark
         ActorFx.rim(rend, 0x6FE0FF, 0.85, 1, 0.1, thick + 1);                                         // the glow of the TV on the side that holds it
         if (ms < FULL_FROM) glitch.apply(rend.pixels, rend.width, rend.height, 0.18 * (1 - approach) + 0.07);
         double alpha = ms < FULL_FROM ? 0.30 + 0.65 * approach : 1;
 
+        long pf2 = System.nanoTime();
         Graphics2D b = (Graphics2D) g.create();
         b.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
         b.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, (float) alpha));
-        b.drawImage(rend.image, 0, 0, w, h, null);
+        rend.premultiply();
+        {
+            int m = 4 + thick;                                                  // the box of what was drawn, with room for the edge light
+            int sx0 = Math.max(0, rend.bx0 - m), sy0 = Math.max(0, rend.by0 - m), sx1 = Math.min(rend.width, rend.bx1 + m + 1), sy1 = Math.min(rend.height, rend.by1 + m + 1);
+            if (sx1 > sx0 && sy1 > sy0) {
+                double kx = (double) w / rend.width, ky = (double) h / rend.height;
+                b.drawImage(rend.imagePre, (int) Math.floor(sx0 * kx), (int) Math.floor(sy0 * ky), (int) Math.ceil(sx1 * kx), (int) Math.ceil(sy1 * ky), sx0, sy0, sx1, sy1, null);
+            }
+        }
         b.setComposite(AlphaComposite.SrcOver);
 
         // where the fist with the TV is on the screen
@@ -410,7 +422,10 @@ final class GlitcherCloseup {
             double open = Math.max(0, Math.sin(t * 9.0) * Math.sin(t * 3.1 + 1)) * 0.22 * rww;
             if (open > 0.02 && pr > 0.08) drawMouth(b, ox + top[0] * u, oy - top[1] * u + u * 4.2, u * 0.5, open * 2.2);
         }
+        long pf3 = System.nanoTime();
         drawCracks(b, w, h, ms, u);
+        long pf4 = System.nanoTime();
+        PROF[0] += pf1 - pf0; PROF[1] += pf2 - pf1; PROF[2] += pf3 - pf2; PROF[3] += pf4 - pf3; PROF[4]++;
         // a white flash on each blow of the fist
         int li2 = lastHit(ms);
         if (ms >= FULL_FROM && li2 >= 0 && ms - hits[li2] < 80) {
@@ -465,36 +480,56 @@ final class GlitcherCloseup {
     }
 
     /** Cracks in the glass, where the blows landed: more of them and longer as the song goes on; they stay. */
+    private java.awt.image.BufferedImage crackCache;
+    private long crackKey = -1;
+
     private void drawCracks(Graphics2D b, int w, int h, double ms, double u) {
         int last = lastHit(ms);
         if (last < 0 || ms < FULL_FROM) return;
         int from = Math.max(0, last - 34);
-        b.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        for (int i = from; i <= last; i++) {
-            if (hits[i] < FULL_FROM) continue;
-            Random rnd = new Random(7000 + i);
-            double age = ms - hits[i];
-            double grow = Math.min(1, age / 130.0);
-            double ix = w * (0.12 + 0.76 * rnd.nextDouble()), iy = h * (0.1 + 0.7 * rnd.nextDouble());
-            double mood = Math.min(1, (hits[i] - FULL_FROM) / (EYES_TO - FULL_FROM));              // the later the blow, the worse the crack
-            int rays = 3 + (int) (2.5 * mood);
-            double fade = 0.45 + 0.55 * (i - from) / (double) Math.max(1, last - from);
-            for (int r = 0; r < rays; r++) {
-                double ang = rnd.nextDouble() * Math.PI * 2, px = ix, py = iy;
-                int segs = 4;
-                for (int s = 0; s < segs * grow; s++) {
-                    ang += (rnd.nextDouble() - 0.5) * 0.8;
-                    double len = h * (0.05 + 0.09 * rnd.nextDouble()) * (0.6 + 0.9 * mood);
-                    double nx = px + Math.cos(ang) * len, ny = py + Math.sin(ang) * len;
-                    b.setColor(new Color(160, 120, 255, (int) (70 * fade)));
-                    b.setStroke(new BasicStroke(5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                    b.drawLine((int) px, (int) py, (int) nx, (int) ny);
-                    b.setColor(new Color(255, 255, 255, (int) (200 * fade)));
-                    b.setStroke(new BasicStroke(1.9f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                    b.drawLine((int) px, (int) py, (int) nx, (int) ny);
-                    px = nx;
-                    py = ny;
-                }
+        int grown = last;                                                      // the newest crack that has finished growing
+        while (grown >= from && ms - hits[grown] < 130) grown--;
+        long key = ((long) last << 24) ^ ((long) (grown + 1) << 44) ^ w ^ ((long) h << 12);
+        if (crackCache == null || crackCache.getWidth() != w || crackCache.getHeight() != h) {
+            crackCache = new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB_PRE);
+            crackKey = -1;
+        }
+        if (key != crackKey) {                                                 // a new blow: the finished cracks are drawn again, once
+            Graphics2D c = crackCache.createGraphics();
+            c.setComposite(AlphaComposite.Clear);
+            c.fillRect(0, 0, w, h);
+            c.setComposite(AlphaComposite.SrcOver);
+            c.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            for (int i = from; i <= grown; i++) drawCrack(c, i, from, last, 1, w, h);
+            c.dispose();
+            crackKey = key;
+        }
+        b.drawImage(crackCache, 0, 0, null);
+        for (int i = Math.max(from, grown + 1); i <= last; i++) drawCrack(b, i, from, last, Math.min(1, (ms - hits[i]) / 130.0), w, h);
+    }
+
+    private void drawCrack(Graphics2D b, int i, int from, int last, double grow, int w, int h) {
+        if (hits[i] < FULL_FROM) return;
+        Random rnd = new Random(7000 + i);
+        double ix = w * (0.12 + 0.76 * rnd.nextDouble()), iy = h * (0.1 + 0.7 * rnd.nextDouble());
+        double mood = Math.min(1, (hits[i] - FULL_FROM) / (EYES_TO - FULL_FROM));              // the later the blow, the worse the crack
+        int rays = 3 + (int) (2.5 * mood);
+        double fade = 0.45 + 0.55 * (i - from) / (double) Math.max(1, last - from);
+        for (int r = 0; r < rays; r++) {
+            double ang = rnd.nextDouble() * Math.PI * 2, px = ix, py = iy;
+            int segs = 4;
+            for (int s = 0; s < segs * grow; s++) {
+                ang += (rnd.nextDouble() - 0.5) * 0.8;
+                double len = h * (0.05 + 0.09 * rnd.nextDouble()) * (0.6 + 0.9 * mood);
+                double nx = px + Math.cos(ang) * len, ny = py + Math.sin(ang) * len;
+                b.setColor(new Color(160, 120, 255, (int) (70 * fade)));
+                b.setStroke(new BasicStroke(5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                b.drawLine((int) px, (int) py, (int) nx, (int) ny);
+                b.setColor(new Color(255, 255, 255, (int) (200 * fade)));
+                b.setStroke(new BasicStroke(1.9f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                b.drawLine((int) px, (int) py, (int) nx, (int) ny);
+                px = nx;
+                py = ny;
             }
         }
     }
