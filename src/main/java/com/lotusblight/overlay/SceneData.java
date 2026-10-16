@@ -151,6 +151,13 @@ final class SceneData {
 
     private static SceneData live;
     private static long liveStamp, liveChecked;
+    private static long version;
+
+    /** Changes every time the scenes are read again: whoever has worked something out from them can tell that it is out of date. */
+    static synchronized long version() {
+        current();
+        return version;
+    }
 
     /**
      * The scenes now: while developing (-Dlotos.scenes=path to the editor's project.txt) the file is read straight from the editor and read again
@@ -159,7 +166,10 @@ final class SceneData {
     static synchronized SceneData current() {
         String path = System.getProperty("lotos.scenes");
         if (path == null) {
-            if (live == null) live = load();
+            if (live == null) {
+                live = load();
+                version++;
+            }
             return live;
         }
         long now = System.currentTimeMillis();
@@ -170,11 +180,15 @@ final class SceneData {
                 try (BufferedReader r = java.nio.file.Files.newBufferedReader(f.toPath(), StandardCharsets.UTF_8)) {
                     live = parse(r);
                     liveStamp = f.lastModified();
+                    version++;
                 } catch (IOException ignored) {
                     // kept as it was
                 }
             }
-            if (live == null) live = load();
+            if (live == null) {
+                live = load();
+                version++;
+            }
         }
         return live;
     }

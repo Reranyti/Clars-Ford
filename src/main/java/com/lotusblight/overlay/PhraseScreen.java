@@ -28,7 +28,9 @@ final class PhraseScreen {
     private static final double PER_CHAR_MS = 280;
     private static final double OUT_MS = 140;           // how long the black takes to clear after the last words
 
-    private final List<Phrase> phrases = new ArrayList<>();
+    private List<Phrase> phrases = new ArrayList<>();
+    private final List<Phrase> fromFile;
+    private long seen = Long.MIN_VALUE;
 
     PhraseScreen() {
         List<double[]> starts = new ArrayList<>();
@@ -51,18 +53,55 @@ final class PhraseScreen {
         } catch (Exception ignored) {
             // no phrases: no black screens
         }
+        List<Phrase> loaded = new ArrayList<>();
         for (int i = 0; i < starts.size(); i++) {
             double from = starts.get(i)[0];
             String text = texts.get(i);
             double sung = Math.min(MAX_HOLD_MS, 200 + PER_CHAR_MS * text.replace("…", "").length());      // roughly as long as it is sung
             double hold = i + 1 < starts.size() ? Math.min(starts.get(i + 1)[0] - from, sung) : sung;
             if (ends.get(i) > from) hold = ends.get(i) - from;                                              // the author's own end, if given
-            phrases.add(new Phrase(from, from + Math.max(200, hold), text));
+            loaded.add(new Phrase(from, from + Math.max(200, hold), text));
         }
+        fromFile = loaded;
+        phrases = loaded;
+    }
+
+    /** The phrases of the timeline (events named "Phrase: words" on the text track) take the place of the file's when there are any. */
+    private void refresh() {
+        long v = SceneData.version();
+        if (v == seen) return;
+        seen = v;
+        SceneData.Cut cut = Layers.cut();
+        List<Phrase> mine = new ArrayList<>();
+        if (cut != null) {
+            for (SceneData.Event e : cut.events) {
+                if (e.track() == SceneLabels.TEXT && e.label().startsWith(SceneLabels.PHRASE)) {
+                    mine.add(new Phrase(e.from() * 1000, e.to() * 1000, e.label().substring(SceneLabels.PHRASE.length())));
+                }
+            }
+        }
+        mine.sort((a, b) -> Double.compare(a.from, b.from));
+        phrases = mine.isEmpty() ? fromFile : mine;
+    }
+
+    /** The phrases of the file (the author's own), whatever the timeline says: {from ms, to ms, words}. */
+    List<Object[]> defaults() {
+        List<Object[]> out = new ArrayList<>();
+        for (Phrase p : fromFile) out.add(new Object[]{p.from, p.to, p.text});
+        return out;
+    }
+
+    /** The phrases as they are now: {from ms, to ms} and the words. */
+    List<Object[]> items() {
+        refresh();
+        List<Object[]> out = new ArrayList<>();
+        for (Phrase p : phrases) out.add(new Object[]{p.from, p.to, p.text});
+        return out;
     }
 
     /** The stretches of the song, in ms, that are black with words (for taking their circles out of the game). */
     List<double[]> intervals() {
+        refresh();
         List<double[]> out = new ArrayList<>();
         for (Phrase p : phrases) out.add(new double[]{p.from, p.to});
         return out;
@@ -98,6 +137,7 @@ final class PhraseScreen {
 
     /** Draws over everything else: the black and the words. */
     void render(Graphics2D g, int w, int h, double ms) {
+        refresh();
         Phrase cur = null;
         double black = 0;
         for (Phrase p : phrases) {

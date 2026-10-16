@@ -55,6 +55,7 @@ struct Layer {
 };
 struct Cut {
     std::string name = "Новая сцена";
+    bool imported = false;                // the events the game has in its own code have been put on the timeline already
     std::string program = "song2";       // which scene program of the game draws it (the game lists them, see ScenePrograms)
     std::vector<Layer> layers;
     std::string song = "D:/The LOTOS/build/song-test/song2.wav";
@@ -187,7 +188,7 @@ std::string projectText() {
     std::ostringstream f;
     f << "LOTOS-EDITOR 1\n";
     for (const Cut& c : gCuts) {
-        f << "CUT\t" << esc(c.name) << '\t' << c.song << '\t' << c.program << '\n';
+        f << "CUT\t" << esc(c.name) << '\t' << c.song << '\t' << c.program << '\t' << (c.imported ? "I" : "-") << '\n';
         for (const Shot& s : c.shots)
             f << "S\t" << esc(s.name) << '\t' << s.t0 << '\t' << s.t1 << '\t' << s.cam.pos.x << ' ' << s.cam.pos.y << ' ' << s.cam.pos.z << '\t'
               << s.cam.target.x << ' ' << s.cam.target.y << ' ' << s.cam.target.z << '\t' << s.cam.fov << '\t' << s.cam.roll << '\t' << esc(s.note) << '\t' << (s.move ? 1 : 0) << '\n';
@@ -254,6 +255,7 @@ void parseProject(std::istream& f) {
                 gCuts.back().name = unesc(p[1]);
                 gCuts.back().song = p[2];
                 gCuts.back().program = p.size() > 3 && !p[3].empty() ? p[3] : "song2";
+                gCuts.back().imported = p.size() > 4 && p[4] == "I";
                 ensureLayers(gCuts.back());
             } else if (p[0] == "S" && p.size() >= 9 && !gCuts.empty()) {
                 Shot s;
@@ -425,6 +427,8 @@ struct Preview {
     int texW = 0, texH = 0;
     std::string pickAnswer, boxAnswer, programsAnswer, program = "song2";
     bool programsReady = false, programsWanted = true;
+    std::string eventsAnswer, eventsFor;
+    bool eventsReady = false, eventsWanted = false;
     bool pickReady = false, boxReady = false;
     bool pickWanted = false, boxWanted = false;
     int pickX = 0, pickY = 0;
@@ -518,6 +522,9 @@ struct Preview {
                             rawH = (b[5] << 24) | (b[6] << 16) | (b[7] << 8) | b[8];
                             png.assign(b.begin() + 9, b.end());
                             fresh = true;
+                        } else if (b[0] == 5) {                                     // the events a scene has in its code
+                            eventsAnswer.assign((const char*) b.data() + 1, b.size() - 1);
+                            eventsReady = true;
                         } else if (b[0] == 4) {                                     // the list of the scene programs
                             programsAnswer.assign((const char*) b.data() + 1, b.size() - 1);
                             programsReady = true;
@@ -559,6 +566,11 @@ struct Preview {
         if (programsWanted) {
             programsWanted = false;
             send("S\n", 2);
+            return;
+        }
+        if (eventsWanted && !eventsFor.empty()) {
+            eventsWanted = false;
+            send(line, std::snprintf(line, sizeof line, "E %s\n", eventsFor.c_str()));
             return;
         }
         if (pickWanted) {
@@ -689,7 +701,7 @@ double gPxPerSec = 40.0, gScroll = 0.0;
 int gDragEv = -1, gDragMode = 0;
 double gDragOff = 0.0;
 
-const float kRulerH = 26, kWaveH = 64, kShotH = 26, kTrackH = 46;
+const float kRulerH = 26, kWaveH = 64, kShotH = 26, kTrackH = 64;
 float timelineHeight() { return kRulerH + kWaveH + kShotH + kTrackH * kTrackCount + 6; }
 
 void timeline() {
@@ -770,19 +782,39 @@ void timeline() {
         dl->AddText(ImVec2(p0.x + 10, y + kTrackH / 2 - 9), kTrackCol[k], kTracks[k]);
     }
     int hoverEv = -1, hoverEdge = 0;
+    // blocks that overlap in a track are put in lanes one under another, as in a video editor
+    std::vector<int> laneOf(events.size(), 0);
+    int laneCount[kTrackCount];
+    for (int k = 0; k < kTrackCount; k++) {
+        std::vector<int> ids;
+        for (int i = 0; i < (int) events.size(); i++)
+            if (events[i].track == k) ids.push_back(i);
+        std::sort(ids.begin(), ids.end(), [&](int a, int b) { return events[a].t0 < events[b].t0; });
+        std::vector<double> ends;
+        for (int id : ids) {
+            int l = 0;
+            while (l < (int) ends.size() && ends[l] > events[id].t0 + 0.001) l++;
+            if (l == (int) ends.size()) ends.push_back(0);
+            ends[l] = events[id].t1;
+            laneOf[id] = l;
+        }
+        laneCount[k] = std::max(1, (int) ends.size());
+    }
     for (int i = 0; i < (int) events.size(); i++) {
         const Ev& e = events[i];
-        float y = ty + kTrackH * e.track + 4;
+        int lanes = std::min(4, laneCount[e.track]);
+        float bh = (kTrackH - 8) / lanes;
+        float y = ty + kTrackH * e.track + 3 + std::min(laneOf[i], lanes - 1) * bh;
         float xa = xOf(e.t0), xb = std::max(xOf(e.t1), xa + 6);
         if (xb < x0 || xa > x1) continue;
         ImU32 c = kTrackCol[e.track];
         ImU32 fill = (c & 0x00FFFFFF) | (i == gSelEv ? 0xB0000000 : 0x70000000);
-        dl->PushClipRect(ImVec2(x0, y), ImVec2(x1, y + kTrackH), true);
-        dl->AddRectFilled(ImVec2(xa, y), ImVec2(xb, y + kTrackH - 10), fill, 4);
-        dl->AddRect(ImVec2(xa, y), ImVec2(xb, y + kTrackH - 10), c, 4, 0, i == gSelEv ? 2.5f : 1.0f);
-        dl->AddText(ImVec2(xa + 5, y + 6), IM_COL32(255, 255, 255, 255), e.label.c_str());
+        dl->PushClipRect(ImVec2(std::max(x0, xa), y), ImVec2(std::min(x1, xb), y + bh), true);
+        dl->AddRectFilled(ImVec2(xa, y), ImVec2(xb, y + bh - 2), fill, 3);
+        dl->AddRect(ImVec2(xa, y), ImVec2(xb, y + bh - 2), c, 3, 0, i == gSelEv ? 2.5f : 1.0f);
+        if (bh >= 15) dl->AddText(ImVec2(xa + 4, y + (bh - 2 - ImGui::GetFontSize()) / 2), IM_COL32(255, 255, 255, 255), e.label.c_str());
         dl->PopClipRect();
-        if (hover && mp.x >= std::max(xa, x0) && mp.x <= xb && mp.y >= y && mp.y <= y + kTrackH - 10) {
+        if (hover && mp.x >= std::max(xa, x0) && mp.x <= xb && mp.y >= y && mp.y <= y + bh - 2) {
             hoverEv = i;
             hoverEdge = (mp.x > xb - 7) ? 2 : 1;
         }
@@ -1181,6 +1213,47 @@ void monitorBody() {
             int qw = (gPlaying || down) ? 960 : (w >= 1000 ? 1920 : 1280), qh = qw * 9 / 16;
             gPreview.keepLayers = !gPlaying;
             gPreview.program = cut().program;
+            if (!gPrograms.empty() && !gPreview.eventsWanted && !gPreview.eventsReady) {        // the events the game has in its code, once for each cut
+                for (Cut& c : gCuts) {
+                    if (c.imported) continue;
+                    gPreview.eventsFor = c.program;
+                    gPreview.eventsWanted = true;
+                    break;
+                }
+            }
+            {
+                std::string ev;
+                std::string forProgram;
+                {
+                    std::lock_guard<std::mutex> lk(gPreview.lock);
+                    if (gPreview.eventsReady) {
+                        ev = gPreview.eventsAnswer;
+                        forProgram = gPreview.eventsFor;
+                        gPreview.eventsReady = false;
+                    }
+                }
+                if (!forProgram.empty()) {
+                    std::istringstream in(ev);
+                    std::string row;
+                    std::vector<Ev> got;
+                    while (std::getline(in, row)) {
+                        std::vector<std::string> f = split(row);
+                        if (f.size() < 5) continue;
+                        Ev e;
+                        e.track = std::atoi(f[0].c_str());
+                        e.t0 = std::atof(f[1].c_str());
+                        e.t1 = std::atof(f[2].c_str());
+                        e.value = (float) std::atof(f[3].c_str());
+                        e.label = f[4];
+                        got.push_back(e);
+                    }
+                    for (Cut& c : gCuts) {
+                        if (c.imported || c.program != forProgram) continue;
+                        if (c.events.empty()) c.events = got;
+                        c.imported = true;
+                    }
+                }
+            }
             {
                 std::string list;
                 {
@@ -1383,7 +1456,7 @@ void propsPanel() {
 }
 
 void timelinePanel() {
-    ImGui::Begin("Таймлайн", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::Begin("Таймлайн", nullptr, ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::Checkbox("Привязка к битам", &gSnap);
     ImGui::SameLine();
     ImGui::TextDisabled("двойной клик по дорожке — создать, колесо — прокрутка, Ctrl+колесо — масштаб");
@@ -1430,6 +1503,10 @@ void menuBar() {
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Сцена")) {
+        if (ImGui::MenuItem("Загрузить события из игры заново")) {
+            cut().events.clear();
+            cut().imported = false;
+        }
         if (ImGui::MenuItem("Собрать черновик динамики по музыке")) makeDraft();
         if (ImGui::MenuItem("Убрать черновик")) clearDraft();
         ImGui::EndMenu();
@@ -1498,6 +1575,7 @@ int main(int argc, char** argv) {
     static const ImWchar symbols[] = {0x2190, 0x23FF, 0x25A0, 0x25FF, 0x2700, 0x27BF, 0};
     ImFontConfig merge;
     merge.MergeMode = true;
+    io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/msyh.ttc", 19.0f, &merge, io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
     static const ImWchar punct[] = {0x2010, 0x2027, 0x2030, 0x203A, 0};      // the dashes and quotes the Cyrillic set of the face leaves out
     io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeui.ttf", 19.0f, &merge, punct);
     io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/seguisym.ttf", 17.0f, &merge, symbols);
@@ -1621,15 +1699,9 @@ int main(int argc, char** argv) {
         }
         if (gPlaying) gForceAsk = true;
 
-        if (uishot && argc > 3 && ImGui::GetFrameCount() == 20) {                    // for the picture of the timeline: some blocks, and its tab
-            cut().events.push_back({0, 20.0, 22.5, "Тряска", 1});
-            cut().events.push_back({1, 36.6, 37.5, "Субтитр", 1});
-            cut().events.push_back({2, 38.0, 38.4, "Вспышка", 1});
-            cut().events.push_back({3, 40.0, 46.0, "Удар", 1});
-            cut().events.push_back({4, 22.1, 24.0, "Змея", 1});
-            gSelEv = 1;
-            gScroll = 15;
-            gPxPerSec = 60;
+        if (uishot && argc > 3 && ImGui::GetFrameCount() == 20) {                    // for the picture of the timeline
+            gScroll = 36;
+            gPxPerSec = 40;
         }
         if (uishot && argc > 3 && ImGui::GetFrameCount() == 40) ImGui::SetWindowFocus("Таймлайн");
         menuBar();
@@ -1658,15 +1730,20 @@ int main(int argc, char** argv) {
         glClearColor(0.05f, 0.05f, 0.07f, 1);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        glfwSwapBuffers(win);
-        if (uishot && ++frameNo == 90) {
+        bool allImported = true;
+        for (const Cut& c : gCuts) allImported = allImported && c.imported;
+        static int settled = 0;
+        if (allImported && gPreview.fresh == false) settled++;
+        if (uishot && ++frameNo >= 90 && ((allImported && settled > 25) || frameNo >= 2400)) {
             std::vector<unsigned char> px((size_t) w * h * 4);
             glReadBuffer(GL_BACK);
             glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+            std::printf("programs %zu, cuts %zu, imported %d, events %zu, frames %d, preview: %s\n", gPrograms.size(), gCuts.size(), (int) gCuts[0].imported, gCuts[0].events.size(), frameNo, gPreview.state.c_str());
             stbi_flip_vertically_on_write(1);
             stbi_write_png(argv[2], w, h, 4, px.data(), w * 4);
             break;
         }
+        glfwSwapBuffers(win);
     }
     if (!uishot) saveProject();
     gPreview.stop();

@@ -21,10 +21,11 @@ import java.util.Random;
  * the screen's size and stretched (the picture is blocky by nature, and the cost stays small).
  */
 final class GlitcherCloseup {
-    static final double SIL_FROM = 19_000, FULL_FROM = 38_000, SCREAM_FROM = 56_000, SCREAM_TO = 57_500, SONG_END = 77_500;
-    static final double EYES_FROM = 79_500, EYES_TO = 133_500;
+    // The timings of the part (ms). The defaults are the author's; the events of the scene's timeline (the editor) take their place when it has them.
+    double SIL_FROM = 19_000, FULL_FROM = 38_000, SCREAM_FROM = 56_000, SCREAM_TO = 57_500, SONG_END = 77_500;
+    double EYES_FROM = 79_500, EYES_TO = 133_500;
     /** Stretches in which the animation sticks and repeats its first moments: {from, to}, ms. */
-    private static final double[][] STUCK = {{43_200, 44_700}, {49_400, 51_000}, {67_600, 68_800}};
+    private double[][] STUCK = {{43_200, 44_700}, {49_400, 51_000}, {67_600, 68_800}};
     private static final double STUCK_LOOP_MS = 330;
     /** The size of the soft-rendered figure against the screen: small in the game (it is blocky by nature), raised by the editor for a still picture. */
     static double RES = 0.42;
@@ -35,17 +36,91 @@ final class GlitcherCloseup {
     private final Actor actor;
     private SoftRenderer rend;
     private final GlitchFx glitch = new GlitchFx();
-    private final double[] hits;
+    private double[] hits = new double[0];
     private double fistX, fistY;
     private boolean haveFist;
+    private final boolean useScene;
+    private long seenVersion = Long.MIN_VALUE;
 
     GlitcherCloseup(int[] skin) {
+        this(skin, true);
+    }
+
+    /** {@code useScene} false: only the author's own defaults, whatever the scene says (for listing them to the editor). */
+    GlitcherCloseup(int[] skin, boolean useScene) {
         this.actor = new Actor(skin, false);
+        this.useScene = useScene;
+        rebuild(null);
+    }
+
+    /** Reads the timings again when the scenes have been read again. */
+    private void refresh() {
+        if (!useScene) return;
+        long v = SceneData.version();
+        if (v == seenVersion) return;
+        seenVersion = v;
+        rebuild(Layers.cut());
+    }
+
+    /** Works the timings out: the defaults, with what the scene's events on the actor track say put over them. */
+    private void rebuild(SceneData.Cut cut) {
+        SIL_FROM = 19_000;
+        FULL_FROM = 38_000;
+        SCREAM_FROM = 56_000;
+        SCREAM_TO = 57_500;
+        SONG_END = 77_500;
+        EYES_FROM = 79_500;
+        EYES_TO = 133_500;
+        STUCK = new double[][]{{43_200, 44_700}, {49_400, 51_000}, {67_600, 68_800}};
+        List<Seg> mine = new ArrayList<>();
+        if (cut != null) {
+            List<double[]> stuck = new ArrayList<>();
+            for (SceneData.Event e : cut.events) {
+                if (e.track() != SceneLabels.ACTOR) continue;
+                String l = e.label();
+                double a = e.from() * 1000, b = e.to() * 1000;
+                if (l.equals(SceneLabels.SILHOUETTE)) SIL_FROM = a;
+                else if (l.equals(SceneLabels.WHOLE)) {
+                    FULL_FROM = a;
+                    SONG_END = b;
+                } else if (l.equals(SceneLabels.EYES)) {
+                    EYES_FROM = a;
+                    EYES_TO = b;
+                } else if (l.equals(SceneLabels.SCREAM)) {
+                    SCREAM_FROM = a;
+                    SCREAM_TO = b;
+                } else if (l.equals(SceneLabels.STUCK)) stuck.add(new double[]{a, b});
+                else {
+                    int sr = SceneLabels.indexOf(SceneLabels.SERIES, l), rs = SceneLabels.indexOf(SceneLabels.RESTS, l);
+                    if (sr >= 0) mine.add(new Seg(a, b, false, sr));
+                    if (rs >= 0) mine.add(new Seg(a, b, true, rs));
+                }
+            }
+            if (!stuck.isEmpty()) STUCK = stuck.toArray(new double[0][]);
+        }
+        segs.clear();
+        if (!mine.isEmpty()) {
+            mine.sort((x, y) -> Double.compare(x.from, y.from));
+            segs.addAll(mine);
+        } else {
+            defaultSegs();
+        }
         List<Double> h = new ArrayList<>();
         for (double t = FULL_FROM; t < SCREAM_FROM - 100; t += 600) h.add(t);              // the pounding before the scream
         for (double t = SCREAM_TO + 500; t < SONG_END - 600; t += 600) h.add(t);           // and after it
         for (double t : ContactBreak.beatTimes()) if (t < EYES_TO) h.add(t);               // in the part with the eye: on every beat
-        // he does not pound without a stop: a series of blows (a different kind each time), then a rest of a different kind each time
+        List<Double> kept = new ArrayList<>();
+        for (double t : h) {
+            boolean resting = false;
+            for (Seg z : segs) if (z.rest && t >= z.from - 150 && t < z.to) resting = true;
+            if (!resting) kept.add(t);
+        }
+        hits = new double[kept.size()];
+        for (int i = 0; i < hits.length; i++) hits[i] = kept.get(i);
+    }
+
+    /** He does not pound without a stop: a series of blows (a different kind each time), then a rest of a different kind each time. */
+    private void defaultSegs() {
         double[][] regions = {{FULL_FROM, SCREAM_FROM - 100, 3.6, 5.2, 1.9, 2.8}, {SCREAM_TO + 500, SONG_END, 3.6, 5.2, 1.9, 2.8}, {EYES_FROM, EYES_TO, 5.0, 8.0, 2.0, 3.2}};
         int[] order = {0, 3, 1, 5, 2, 6, 4};
         Random rnd = new Random(1313);
@@ -62,14 +137,21 @@ final class GlitcherCloseup {
                 t = end;
             }
         }
-        List<Double> kept = new ArrayList<>();
-        for (double t : h) {
-            boolean resting = false;
-            for (Seg z : segs) if (z.rest && t >= z.from - 150 && t < z.to) resting = true;
-            if (!resting) kept.add(t);
+    }
+
+    /** What the part is made of, as events for the editor's timeline: {track, from s, to s, value, label}; the author's defaults, not the scene's. */
+    static List<Object[]> events(int[] skin) {
+        GlitcherCloseup d = new GlitcherCloseup(skin, false);
+        List<Object[]> out = new ArrayList<>();
+        out.add(new Object[]{SceneLabels.ACTOR, d.SIL_FROM / 1000, d.FULL_FROM / 1000, 1.0, SceneLabels.SILHOUETTE});
+        out.add(new Object[]{SceneLabels.ACTOR, d.FULL_FROM / 1000, d.SONG_END / 1000, 1.0, SceneLabels.WHOLE});
+        out.add(new Object[]{SceneLabels.ACTOR, d.SCREAM_FROM / 1000, d.SCREAM_TO / 1000, 1.0, SceneLabels.SCREAM});
+        out.add(new Object[]{SceneLabels.ACTOR, d.EYES_FROM / 1000, d.EYES_TO / 1000, 1.0, SceneLabels.EYES});
+        for (double[] st : d.STUCK) out.add(new Object[]{SceneLabels.ACTOR, st[0] / 1000, st[1] / 1000, 1.0, SceneLabels.STUCK});
+        for (Seg z : d.segs) {
+            out.add(new Object[]{SceneLabels.ACTOR, z.from / 1000, z.to / 1000, 1.0, z.rest ? SceneLabels.RESTS[z.sub] : SceneLabels.SERIES[z.sub]});
         }
-        hits = new double[kept.size()];
-        for (int i = 0; i < hits.length; i++) hits[i] = kept.get(i);
+        return out;
     }
 
     /** A stretch of the dance: a series of blows (sub 0 right fist, 1 the two fists in turn, 2 both together) or a rest (sub: 0 slumped, 1 palm on the glass, 2 claws, 3 speaking, 4 peering, 5 staggering back, 6 glancing about). */
@@ -103,6 +185,7 @@ final class GlitcherCloseup {
     }
 
     boolean active(double ms) {
+        refresh();
         return (ms >= SIL_FROM && ms < SONG_END) || (ms >= EYES_FROM && ms < EYES_TO);
     }
 
@@ -112,7 +195,7 @@ final class GlitcherCloseup {
     }
 
     /** The time the animation is on: the same as the clock, except in the stretches where it sticks and repeats. */
-    private static double animTime(double ms) {
+    private double animTime(double ms) {
         for (double[] s : STUCK) {
             if (ms >= s[0] && ms < s[1]) return s[0] + ((ms - s[0]) % STUCK_LOOP_MS);
         }

@@ -44,6 +44,16 @@ final class Song2Program implements SceneProgram {
                 {"phrases", "Чёрные экраны с фразами"}};
     }
 
+    @Override
+    public java.util.List<Object[]> events() {
+        java.util.List<Object[]> out = new java.util.ArrayList<>(GlitcherCloseup.events(skin));
+        for (Object[] p : phrases.defaults()) {
+            out.add(new Object[]{SceneLabels.TEXT, (Double) p[0] / 1000, (Double) p[1] / 1000, 1.0, SceneLabels.PHRASE + p[2]});
+        }
+        for (double m : SnakesFx.fileMarks()) out.add(new Object[]{SceneLabels.SNAKES, m / 1000, m / 1000 + 2.5, 1.0, SceneLabels.SNAKE});
+        return out;
+    }
+
     /** The tilt and push of the columns and of the Glitcher's blows, as the game applies it to what it draws. */
     private Graphics2D camera(Graphics2D g, int w, int h, double t) {
         Graphics2D c = (Graphics2D) g.create();

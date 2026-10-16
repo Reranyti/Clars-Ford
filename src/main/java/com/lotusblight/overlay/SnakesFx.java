@@ -23,8 +23,32 @@ final class SnakesFx {
     private static final double STEP_MS = 46;               // the window jumps this often: it keeps freezing
     private static final int COPIES = 30;
 
-    private static final List<Double> MARKS = loadMarks();
-    private final List<Double> marks = MARKS;
+    private static final List<Double> FILE_MARKS = loadMarks();
+    private static List<Double> marksNow = FILE_MARKS;
+    private static long marksSeen = Long.MIN_VALUE;
+
+    /** The moments of snakes.txt (the author's own), whatever the timeline says. */
+    static List<Double> fileMarks() {
+        return FILE_MARKS;
+    }
+
+    /** The moments snakes come out: the events named "Snake" on the snakes track when the timeline has any, else snakes.txt. */
+    static synchronized List<Double> marksNow() {
+        long v = SceneData.version();
+        if (v != marksSeen) {
+            marksSeen = v;
+            SceneData.Cut cut = Layers.cut();
+            List<Double> mine = new ArrayList<>();
+            if (cut != null) {
+                for (SceneData.Event e : cut.events) {
+                    if (e.track() == SceneLabels.SNAKES && e.label().equals(SceneLabels.SNAKE)) mine.add(e.from() * 1000);
+                }
+            }
+            java.util.Collections.sort(mine);
+            marksNow = mine.isEmpty() ? FILE_MARKS : mine;
+        }
+        return marksNow;
+    }
     private final OldTv tv = new OldTv();
     private BufferedImage buf;
     private static List<BufferedImage> windows;
@@ -49,7 +73,7 @@ final class SnakesFx {
     /** 0..1: how much the Glitcher is showing the TV to the player (he turns to face us and lifts it while the snakes run). */
     static double presenting(double ms) {
         double best = 0;
-        for (double m : MARKS) {
+        for (double m : marksNow()) {
             double age = ms - m;
             double a;
             if (age < -160 || age > LIFE_MS + 300) continue;
@@ -134,6 +158,7 @@ final class SnakesFx {
     }
 
     void render(Graphics2D g, int w, int h, double ms, Hand hand) {
+        List<Double> marks = marksNow();
         // the set, in his hand for as long as he is there; it jerks in his fist while the snakes come out
         double[] fist = hand.at(ms);
         if (fist != null && presenting(ms) > 0.02) {

@@ -18,6 +18,7 @@ import java.io.PrintStream;
  * R ms width height keep scene   draw the scene at the moment (keep=1: remember the layers, for picking)
  * P x y                          the layer under the point of the last picture
  * B layer                        the box of a layer in the last picture
+ * E scene                        the events the scene has in its code (kind 5: track, from, to, strength, name; one a line)
  * </pre>
  * and what comes back, each as four bytes of length, one byte of kind, the data: 3 a picture (width, height, then B G R A for every pixel),
  * 1 the name of a layer, 2 a box, 4 the list. Whatever comes from the editor's scenes (the camera, the layers, the events) is read live.
@@ -43,6 +44,14 @@ public final class PreviewMain {
                     sb.append('\n');
                 }
                 answer(out, 4, sb.toString().getBytes("UTF-8"));
+                continue;
+            }
+            if (p[0].equals("E") && p.length >= 2) {                                  // the events a scene already has in its code
+                StringBuilder sb = new StringBuilder();
+                for (Object[] e : ScenePrograms.get(p[1]).events()) {
+                    sb.append(e[0]).append('\t').append(e[1]).append('\t').append(e[2]).append('\t').append(e[3]).append('\t').append(e[4]).append('\n');
+                }
+                answer(out, 5, sb.toString().getBytes("UTF-8"));
                 continue;
             }
             if (p[0].equals("P") && p.length >= 3) {                                  // which layer is under this point of the last picture

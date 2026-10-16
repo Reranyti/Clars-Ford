@@ -18,6 +18,14 @@ interface SceneProgram {
     /** The layers from the bottom to the top: {id, name to show}. */
     String[][] layers();
 
+    /**
+     * The events the scene already has in its own code, as the author's defaults, for the editor to put on the timeline: {track, from s, to s,
+     * strength, name}. Only the events the game really obeys when the timeline has them belong here.
+     */
+    default java.util.List<Object[]> events() {
+        return java.util.List.of();
+    }
+
     /** Draws the picture at the moment (ms of the scene's own clock) at the size. */
     void render(Graphics2D g, int w, int h, double ms);
 }

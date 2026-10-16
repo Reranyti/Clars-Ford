@@ -461,7 +461,7 @@ class Lab:
             shutil.copytree(prev, out)
         else:
             out.mkdir(parents=True, exist_ok=True)
-        files = [str(OVERLAY / f"{r}.java") for r in ROOTS if (OVERLAY / f"{r}.java").exists()]
+        files = [str(f) for f in sorted(OVERLAY.glob("*.java"))]          # every source of the package: javac does not look for what changed behind classes it thinks are up to date
         cmd = [JAVAC, "-encoding", "UTF-8", "-nowarn", "-cp", ";".join([str(out), str(RES)] + JARS), "-sourcepath", str(SRC), "-d", str(out)] + files
         try:
             r = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, creationflags=NO_WINDOW, timeout=300)

@@ -20,7 +20,7 @@ def main():
     start = sys.argv[2] if len(sys.argv) > 2 else "0"
     out = lab.OUT / "classes-cli"
     out.mkdir(parents=True, exist_ok=True)
-    files = [str(lab.OVERLAY / f"{r}.java") for r in lab.ROOTS + ["PreviewMain"] if (lab.OVERLAY / f"{r}.java").exists()]
+    files = [str(f) for f in sorted(lab.OVERLAY.glob("*.java"))]          # every source of the package: javac does not look for what changed behind classes it thinks are up to date
     cmd = [lab.JAVAC, "-encoding", "UTF-8", "-nowarn", "-cp", ";".join([str(out), str(lab.RES)] + lab.JARS),
            "-sourcepath", str(lab.SRC), "-d", str(out)] + files
     r = subprocess.run(cmd, cwd=str(lab.ROOT), capture_output=True, creationflags=lab.NO_WINDOW)
