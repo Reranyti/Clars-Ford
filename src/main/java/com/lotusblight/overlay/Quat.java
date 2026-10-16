@@ -31,6 +31,21 @@ final class Quat {
         return qz.mul(qy).mul(qx);
     }
 
+    /** The Euler angles in degrees that {@link #euler} would be given to make this turn: {x, y, z}. */
+    double[] toEuler() {
+        double[] m = matrix();                                      // z after y after x: m[6] = -sin(y)
+        double sy = Math.max(-1, Math.min(1, -m[6]));
+        double y = Math.asin(sy), x, z;
+        if (Math.abs(sy) > 0.99999) {                               // looking straight up or down: the x and z turns cannot be told apart
+            x = Math.atan2(-m[5], m[4]);
+            z = 0;
+        } else {
+            x = Math.atan2(m[7], m[8]);
+            z = Math.atan2(m[3], m[0]);
+        }
+        return new double[]{Math.toDegrees(x), Math.toDegrees(y), Math.toDegrees(z)};
+    }
+
     /** {@code this} after {@code b}: the result turns by b first, then by this. */
     Quat mul(Quat b) {
         return new Quat(

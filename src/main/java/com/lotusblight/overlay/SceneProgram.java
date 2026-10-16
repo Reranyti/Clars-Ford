@@ -26,6 +26,11 @@ interface SceneProgram {
         return java.util.List.of();
     }
 
+    /** The body's pose at a moment as the code gives it, as key data ({@link PoseKeys}); empty when the scene has no body to pose. */
+    default String capturePose(double ms) {
+        return "";
+    }
+
     /** Draws the picture at the moment (ms of the scene's own clock) at the size. */
     void render(Graphics2D g, int w, int h, double ms);
 }

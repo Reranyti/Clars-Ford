@@ -21,6 +21,7 @@
 #include <thread>
 
 #include <algorithm>
+#include <map>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -48,6 +49,12 @@ struct Shot {
     std::string note;
     bool move = false;      // glides to the camera of the next shot over its own length
 };
+// a pose of the body held at a moment: some joints' turns, the hips, the aim of limbs; between two keys the body goes from one to the other
+struct Key {
+    double t = 0;
+    float weight = 1;                                 // how much the keyed pose counts against the game's own animation (0 gives the body back)
+    std::map<std::string, std::vector<float>> v;      // "head" -> x,y,z; "root.pos" -> x,y,z; "ik.r_arm" -> w, x,y,z, pole x,y,z, roll, yaw
+};
 struct Layer {
     std::string id, name;
     bool visible = true;
@@ -58,6 +65,7 @@ struct Cut {
     bool imported = false;                // the events the game has in its own code have been put on the timeline already
     std::string program = "song2";       // which scene program of the game draws it (the game lists them, see ScenePrograms)
     std::vector<Layer> layers;
+    std::vector<Key> keys;
     std::string song = "D:/The LOTOS/build/song-test/song2.wav";
     std::vector<Shot> shots;
     std::vector<Ev> events;
@@ -184,6 +192,32 @@ void defaultShots(Cut& c) {
     c.shots.push_back({"Рука", 38, 56, {{-16, 19, 24}, {-6, 19, 0}, 36, 4}, "Рука у стекла", false});
 }
 
+std::string keyData(const Key& k) {
+    std::ostringstream o;
+    for (const auto& kv : k.v) {
+        o << kv.first << '=';
+        for (size_t i = 0; i < kv.second.size(); i++) o << (i ? "," : "") << kv.second[i];
+        o << ';';
+    }
+    return o.str();
+}
+
+std::map<std::string, std::vector<float>> parseKeyData(const std::string& d) {
+    std::map<std::string, std::vector<float>> out;
+    std::stringstream ss(d);
+    std::string item;
+    while (std::getline(ss, item, ';')) {
+        size_t eq = item.find('=');
+        if (eq == std::string::npos || eq == 0) continue;
+        std::vector<float> v;
+        std::stringstream ns(item.substr(eq + 1));
+        std::string n;
+        while (std::getline(ns, n, ',')) v.push_back((float) std::atof(n.c_str()));
+        out[item.substr(0, eq)] = v;
+    }
+    return out;
+}
+
 std::string projectText() {
     std::ostringstream f;
     f << "LOTOS-EDITOR 1\n";
@@ -192,6 +226,7 @@ std::string projectText() {
         for (const Shot& s : c.shots)
             f << "S\t" << esc(s.name) << '\t' << s.t0 << '\t' << s.t1 << '\t' << s.cam.pos.x << ' ' << s.cam.pos.y << ' ' << s.cam.pos.z << '\t'
               << s.cam.target.x << ' ' << s.cam.target.y << ' ' << s.cam.target.z << '\t' << s.cam.fov << '\t' << s.cam.roll << '\t' << esc(s.note) << '\t' << (s.move ? 1 : 0) << '\n';
+        for (const Key& k : c.keys) f << "K\t" << k.t << '\t' << k.weight << '\t' << keyData(k) << '\n';
         for (const Layer& y : c.layers)
             f << "O\t" << y.id << '\t' << (y.visible ? 1 : 0) << '\t' << y.dx << '\t' << y.dy << '\t' << y.scale << '\t' << y.rot * 3.14159265358979 / 180.0 << '\t' << y.alpha << '\t' << esc(y.name) << '\n';
         for (const Ev& e : c.events) f << "E\t" << e.track << '\t' << e.t0 << '\t' << e.t1 << '\t' << esc(e.label) << '\t' << e.value << '\t' << (e.autogen ? 'A' : '-') << '\n';
@@ -270,6 +305,12 @@ void parseProject(std::istream& f) {
                 s.note = unesc(p[8]);
                 s.move = p.size() > 9 && p[9] == "1";
                 gCuts.back().shots.push_back(s);
+            } else if (p[0] == "K" && p.size() >= 3 && !gCuts.empty()) {
+                Key k;
+                k.t = std::stod(p[1]);
+                k.weight = std::stof(p[2]);
+                if (p.size() > 3) k.v = parseKeyData(p[3]);
+                gCuts.back().keys.push_back(k);
             } else if (p[0] == "O" && p.size() >= 8 && !gCuts.empty()) {
                 for (Layer& y : gCuts.back().layers) {
                     if (y.id != p[1]) continue;
@@ -427,6 +468,9 @@ struct Preview {
     int texW = 0, texH = 0;
     std::string pickAnswer, boxAnswer, programsAnswer, program = "song2";
     bool programsReady = false, programsWanted = true;
+    std::string captureAnswer, captureFor;
+    double captureT = 0;
+    bool captureReady = false, captureWanted = false;
     std::string eventsAnswer, eventsFor;
     bool eventsReady = false, eventsWanted = false;
     bool pickReady = false, boxReady = false;
@@ -522,6 +566,9 @@ struct Preview {
                             rawH = (b[5] << 24) | (b[6] << 16) | (b[7] << 8) | b[8];
                             png.assign(b.begin() + 9, b.end());
                             fresh = true;
+                        } else if (b[0] == 6) {                                     // the pose the game gives the body at a moment
+                            captureAnswer.assign((const char*) b.data() + 1, b.size() - 1);
+                            captureReady = true;
                         } else if (b[0] == 5) {                                     // the events a scene has in its code
                             eventsAnswer.assign((const char*) b.data() + 1, b.size() - 1);
                             eventsReady = true;
@@ -566,6 +613,11 @@ struct Preview {
         if (programsWanted) {
             programsWanted = false;
             send("S\n", 2);
+            return;
+        }
+        if (captureWanted) {
+            captureWanted = false;
+            send(line, std::snprintf(line, sizeof line, "G %s %.1f\n", captureFor.c_str(), captureT * 1000.0));
             return;
         }
         if (eventsWanted && !eventsFor.empty()) {
@@ -701,8 +753,36 @@ double gPxPerSec = 40.0, gScroll = 0.0;
 int gDragEv = -1, gDragMode = 0;
 double gDragOff = 0.0;
 
+// ---- the poses of the body
+int gSelKey = -1, gSelJoint = 2;
+const struct { const char* id; const char* label; } kJoints[15] = {
+    {"lower_torso", "Таз (низ корпуса)"}, {"upper_torso", "Грудь"}, {"head", "Голова"},
+    {"r_upper_arm", "Правое плечо"}, {"r_lower_arm", "Правый локоть"}, {"r_hand", "Правая кисть"},
+    {"l_upper_arm", "Левое плечо"}, {"l_lower_arm", "Левый локоть"}, {"l_hand", "Левая кисть"},
+    {"r_upper_leg", "Правое бедро"}, {"r_lower_leg", "Правое колено"}, {"r_foot", "Правая стопа"},
+    {"l_upper_leg", "Левое бедро"}, {"l_lower_leg", "Левое колено"}, {"l_foot", "Левая стопа"}};
+const char* kLimbIds[4] = {"r_arm", "l_arm", "r_leg", "l_leg"};
+const char* kLimbNames[4] = {"Правая рука (кулак)", "Левая рука (кулак)", "Правая нога (щиколотка)", "Левая нога (щиколотка)"};
+
+void sortKeys() {
+    double sel = (gSelKey >= 0 && gSelKey < (int) cut().keys.size()) ? cut().keys[gSelKey].t : 0;
+    bool had = gSelKey >= 0;
+    std::stable_sort(cut().keys.begin(), cut().keys.end(), [](const Key& a, const Key& b) { return a.t < b.t; });
+    if (had)
+        for (int i = 0; i < (int) cut().keys.size(); i++)
+            if (std::fabs(cut().keys[i].t - sel) < 1e-9) gSelKey = i;
+}
+
+void addKey(const Key& k) {
+    cut().keys.push_back(k);
+    sortKeys();
+    for (int i = 0; i < (int) cut().keys.size(); i++)
+        if (&cut().keys[i] && std::fabs(cut().keys[i].t - k.t) < 1e-9) gSelKey = i;
+}
+
 const float kRulerH = 26, kWaveH = 64, kShotH = 26, kTrackH = 64;
-float timelineHeight() { return kRulerH + kWaveH + kShotH + kTrackH * kTrackCount + 6; }
+const float kKeyH = 36;
+float timelineHeight() { return kRulerH + kWaveH + kShotH + kTrackH * kTrackCount + kKeyH + 6; }
 
 void timeline() {
     const float headW = 110;
@@ -819,11 +899,50 @@ void timeline() {
             hoverEdge = (mp.x > xb - 7) ? 2 : 1;
         }
     }
-    int laneTrack = (hover && mp.x > x0 && mp.y > ty) ? (int) ((mp.y - ty) / kTrackH) : -1;
+    // the row of the body's poses: a diamond for every key
+    float ky = ty + kTrackH * kTrackCount;
+    dl->AddRectFilled(ImVec2(p0.x, ky), ImVec2(x1, ky + kKeyH - 2), IM_COL32(28, 26, 22, 255));
+    dl->AddRectFilled(ImVec2(p0.x, ky), ImVec2(x0 - 4, ky + kKeyH - 2), IM_COL32(48, 42, 30, 255));
+    dl->AddText(ImVec2(p0.x + 10, ky + kKeyH / 2 - 9), IM_COL32(255, 190, 80, 255), "Позы тела");
+    int hoverKey = -1;
+    std::vector<Key>& pkeys = cut().keys;
+    for (int i = 0; i + 1 < (int) pkeys.size(); i++) {                    // a bar between two keys: the body is held there
+        float xa = xOf(pkeys[i].t), xb = xOf(pkeys[i + 1].t);
+        if (pkeys[i].weight <= 0 && pkeys[i + 1].weight <= 0) continue;
+        dl->AddRectFilled(ImVec2(std::max(xa, x0), ky + 12), ImVec2(std::min(xb, x1), ky + kKeyH - 14), IM_COL32(255, 190, 80, 55));
+    }
+    for (int i = 0; i < (int) pkeys.size(); i++) {
+        float x = xOf(pkeys[i].t), y = ky + kKeyH / 2 - 1;
+        if (x < x0 - 8 || x > x1 + 8) continue;
+        float r = 8;
+        ImU32 c = pkeys[i].weight <= 0 ? IM_COL32(150, 150, 150, 255) : IM_COL32(255, 190, 80, 255);
+        dl->AddQuadFilled(ImVec2(x, y - r), ImVec2(x + r, y), ImVec2(x, y + r), ImVec2(x - r, y), c);
+        if (i == gSelKey) dl->AddQuad(ImVec2(x, y - r - 3), ImVec2(x + r + 3, y), ImVec2(x, y + r + 3), ImVec2(x - r - 3, y), IM_COL32(255, 255, 255, 255), 2.0f);
+        if (hover && std::fabs(mp.x - x) < r + 3 && std::fabs(mp.y - y) < r + 3) hoverKey = i;
+    }
+    int laneTrack = (hover && mp.x > x0 && mp.y > ty && mp.y < ky) ? (int) ((mp.y - ty) / kTrackH) : -1;
     if (laneTrack >= kTrackCount) laneTrack = -1;
     if (hoverEv >= 0 && hoverEdge == 2) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
 
-    if (hover && ImGui::IsMouseClicked(0)) {
+    static int dragKey = -1;
+    if (hover && ImGui::IsMouseDoubleClicked(0) && hoverKey < 0 && mp.y >= ky && mp.x > x0) {
+        Key k;
+        k.t = std::max(0.0, snapT(tOf(mp.x), gPxPerSec));
+        addKey(k);
+    } else if (hover && ImGui::IsMouseClicked(0) && hoverKey >= 0) {
+        gSelKey = hoverKey;
+        dragKey = hoverKey;
+        gSelEv = -1;
+    }
+    if (dragKey >= 0) {
+        if (ImGui::IsMouseDown(0) && dragKey < (int) pkeys.size()) {
+            pkeys[dragKey].t = std::max(0.0, snapT(tOf(mp.x), gPxPerSec));
+        } else {
+            dragKey = -1;
+            sortKeys();
+        }
+    }
+    if (hover && ImGui::IsMouseClicked(0) && hoverKey < 0 && mp.y < ky) {
         if (mp.y < wy + kWaveH && mp.x > x0) {
             seek(tOf(mp.x));
             gDragMode = 3;
@@ -1025,6 +1144,116 @@ void makeDraft() {
     gStatus = "Черновик динамики собран: его можно править";
 }
 
+std::string timecode(double t);
+
+void posePanel() {
+    ImGui::Begin("Поза Глитчера");
+    std::vector<Key>& keys = cut().keys;
+    if (gPreview.ready) {
+        if (ImGui::Button("+ Ключ здесь: поза из игры")) {
+            gPreview.captureWanted = true;
+            gPreview.captureT = gHead;
+            gPreview.captureFor = cut().program;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("+ Пустой ключ")) {
+            Key k;
+            k.t = gHead;
+            addKey(k);
+        }
+    } else {
+        ImGui::TextDisabled("Игра ещё запускается…");
+    }
+    ImGui::TextDisabled("Между двумя ключами тело плавно идёт из одной позы в другую.\nДо первого и после последнего ключа тело ведёт игра.");
+    ImGui::Separator();
+    for (int i = 0; i < (int) keys.size(); i++) {
+        char b[96];
+        std::snprintf(b, sizeof b, "%s   вес %.2f   (%d сустав.)##key%d", timecode(keys[i].t).c_str(), keys[i].weight, (int) keys[i].v.size(), i);
+        if (ImGui::Selectable(b, i == gSelKey)) {
+            gSelKey = i;
+            seek(keys[i].t);
+        }
+    }
+    if (gSelKey < 0 || gSelKey >= (int) keys.size()) {
+        ImGui::TextDisabled("Выбери ключ в списке или ромбик на шкале.");
+        ImGui::End();
+        return;
+    }
+    Key& k = keys[gSelKey];
+    ImGui::Separator();
+    float t = (float) k.t;
+    if (ImGui::DragFloat("Время, с", &t, 0.01f, 0, (float) gLength, "%.2f")) {
+        k.t = t;
+        sortKeys();
+    }
+    ImGui::SliderFloat("Вес (0 — тело отдано игре)", &k.weight, 0, 1, "%.2f");
+    if (ImGui::Button("Копия через 1 с")) {
+        Key c = k;
+        c.t = k.t + 1.0;
+        addKey(c);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Отпустить через 1 с")) {
+        Key c;
+        c.t = k.t + 1.0;
+        c.weight = 0;
+        c.v = k.v;
+        addKey(c);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Удалить ключ")) {
+        keys.erase(keys.begin() + gSelKey);
+        gSelKey = std::min(gSelKey, (int) keys.size() - 1);
+        ImGui::End();
+        return;
+    }
+    ImGui::Separator();
+    ImGui::TextDisabled("СУСТАВЫ (● — задан в ключе)");
+    for (int i = 0; i < 15; i++) {
+        bool has = k.v.count(kJoints[i].id) > 0;
+        char b[96];
+        std::snprintf(b, sizeof b, "%s %s##j%d", has ? "●" : "○", kJoints[i].label, i);
+        if (ImGui::Selectable(b, i == gSelJoint)) gSelJoint = i;
+    }
+    gSelJoint = std::max(0, std::min(14, gSelJoint));
+    const char* jid = kJoints[gSelJoint].id;
+    std::vector<float> cur = k.v.count(jid) ? k.v[jid] : std::vector<float>{0, 0, 0};
+    cur.resize(3);
+    ImGui::Separator();
+    ImGui::Text("%s", kJoints[gSelJoint].label);
+    bool changed = false;
+    changed |= ImGui::SliderFloat("Сгиб (X)", &cur[0], -180, 180, "%.1f°");
+    changed |= ImGui::SliderFloat("Поворот (Y)", &cur[1], -180, 180, "%.1f°");
+    changed |= ImGui::SliderFloat("Наклон (Z)", &cur[2], -180, 180, "%.1f°");
+    if (changed) k.v[jid] = cur;
+    if (k.v.count(jid) && ImGui::Button("Убрать сустав из ключа")) k.v.erase(jid);
+    ImGui::Separator();
+    ImGui::TextDisabled("ТАЗ: СДВИГ");
+    std::vector<float> rp = k.v.count("root.pos") ? k.v["root.pos"] : std::vector<float>{0, 0, 0};
+    rp.resize(3);
+    if (ImGui::DragFloat3("x  y  z", rp.data(), 0.05f)) k.v["root.pos"] = rp;
+    if (k.v.count("root.pos") && ImGui::SmallButton("Убрать сдвиг")) k.v.erase("root.pos");
+    ImGui::Separator();
+    ImGui::TextDisabled("КОНЕЧНОСТИ: КУДА ТЯНУТСЯ");
+    for (int i = 0; i < 4; i++) {
+        std::string name = std::string("ik.") + kLimbIds[i];
+        bool has = k.v.count(name) > 0;
+        if (!ImGui::TreeNode((std::string(has ? "● " : "○ ") + kLimbNames[i] + "##ik" + std::to_string(i)).c_str())) continue;
+        std::vector<float> v = has ? k.v[name] : std::vector<float>{0, 0, 0, 0, 0, 0, 0, 0, 0};
+        v.resize(9);
+        bool ch = false;
+        ch |= ImGui::SliderFloat("Сила", &v[0], 0, 1, "%.2f");
+        ch |= ImGui::DragFloat3("Куда: x y z", &v[1], 0.1f);
+        ch |= ImGui::DragFloat3("Локоть/колено: x y z", &v[4], 0.1f);
+        ch |= ImGui::DragFloat("Наклон стопы", &v[7], 0.5f);
+        ch |= ImGui::DragFloat("Поворот стопы", &v[8], 0.5f);
+        if (ch) k.v[name] = v;
+        if (has && ImGui::SmallButton("Убрать")) k.v.erase(name);
+        ImGui::TreePop();
+    }
+    ImGui::End();
+}
+
 void applyTheme() {
     ImGuiStyle& st = ImGui::GetStyle();
     st.WindowRounding = 0;
@@ -1213,6 +1442,33 @@ void monitorBody() {
             int qw = (gPlaying || down) ? 960 : (w >= 1000 ? 1920 : 1280), qh = qw * 9 / 16;
             gPreview.keepLayers = !gPlaying;
             gPreview.program = cut().program;
+            {
+                std::string cap;
+                {
+                    std::lock_guard<std::mutex> lk(gPreview.lock);
+                    if (gPreview.captureReady) {
+                        cap = gPreview.captureAnswer;
+                        gPreview.captureReady = false;
+                    }
+                }
+                if (!cap.empty()) {
+                    Key k;
+                    k.t = gPreview.captureT;
+                    k.weight = 1;
+                    k.v = parseKeyData(cap);
+                    bool first = cut().keys.empty();
+                    addKey(k);
+                    if (first) {                                  // one key alone does nothing: the second, a second later, makes the pose show
+                        Key c = k;
+                        c.t = k.t + 1.0;
+                        int sel = gSelKey;
+                        addKey(c);
+                        gSelKey = sel >= 0 ? sel : 0;
+                        for (int i = 0; i < (int) cut().keys.size(); i++)
+                            if (std::fabs(cut().keys[i].t - k.t) < 1e-9) gSelKey = i;
+                    }
+                }
+            }
             if (!gPrograms.empty() && !gPreview.eventsWanted && !gPreview.eventsReady) {        // the events the game has in its code, once for each cut
                 for (Cut& c : gCuts) {
                     if (c.imported) continue;
@@ -1480,6 +1736,7 @@ void buildLayout(ImGuiID dock, ImVec2 size) {
     bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.42f, nullptr, &center);
     ImGui::DockBuilderDockWindow("Проект", left);
     ImGui::DockBuilderDockWindow("Свойства", right);
+    ImGui::DockBuilderDockWindow("Поза Глитчера", right);
     ImGui::DockBuilderDockWindow("Монитор", center);
     ImGui::DockBuilderDockWindow("Таймлайн", bottom);
     ImGui::DockBuilderDockWindow("Раскадровка", bottom);
@@ -1718,6 +1975,7 @@ int main(int argc, char** argv) {
         monitorFull();
         projectPanel();
         propsPanel();
+        posePanel();
         timelinePanel();
         storyboardPanel();
 

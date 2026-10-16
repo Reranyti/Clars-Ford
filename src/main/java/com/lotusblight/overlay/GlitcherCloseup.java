@@ -139,6 +139,20 @@ final class GlitcherCloseup {
         }
     }
 
+    /** The pose the code itself gives the body at a time, as key data (the editor starts a key from it). */
+    String capture(double ms) {
+        PoseKeys.skip = true;
+        try {
+            java.awt.image.BufferedImage tmp = new java.awt.image.BufferedImage(64, 36, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = tmp.createGraphics();
+            render(g, 64, 36, ms);
+            g.dispose();
+        } finally {
+            PoseKeys.skip = false;
+        }
+        return PoseKeys.dump(actor.pose);
+    }
+
     /** What the part is made of, as events for the editor's timeline: {track, from s, to s, value, label}; the author's defaults, not the scene's. */
     static List<Object[]> events(int[] skin) {
         GlitcherCloseup d = new GlitcherCloseup(skin, false);
@@ -468,6 +482,7 @@ final class GlitcherCloseup {
         rend.setLight(key, amb);
         u *= scaleMul;
         ox += dxScreen * w;
+        if (useScene && Layers.cut() != null) PoseKeys.apply(actor, ms / 1000.0, Layers.cut().keys);       // the poses set in the editor, laid over the code's own
         long pf0 = System.nanoTime();
         actor.draw(rend, u * RES, ox * RES, oy * RES);
         long pf1 = System.nanoTime();

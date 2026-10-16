@@ -18,6 +18,7 @@ import java.io.PrintStream;
  * R ms width height keep scene   draw the scene at the moment (keep=1: remember the layers, for picking)
  * P x y                          the layer under the point of the last picture
  * B layer                        the box of a layer in the last picture
+ * G scene ms                      the pose of the body the code gives at the moment, as key data (kind 6)
  * E scene                        the events the scene has in its code (kind 5: track, from, to, strength, name; one a line)
  * </pre>
  * and what comes back, each as four bytes of length, one byte of kind, the data: 3 a picture (width, height, then B G R A for every pixel),
@@ -52,6 +53,10 @@ public final class PreviewMain {
                     sb.append(e[0]).append('\t').append(e[1]).append('\t').append(e[2]).append('\t').append(e[3]).append('\t').append(e[4]).append('\n');
                 }
                 answer(out, 5, sb.toString().getBytes("UTF-8"));
+                continue;
+            }
+            if (p[0].equals("G") && p.length >= 3) {                                  // the pose the code gives the body at a moment
+                answer(out, 6, ScenePrograms.get(p[1]).capturePose(Double.parseDouble(p[2])).getBytes("UTF-8"));
                 continue;
             }
             if (p[0].equals("P") && p.length >= 3) {                                  // which layer is under this point of the last picture

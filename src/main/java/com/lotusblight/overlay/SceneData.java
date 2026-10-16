@@ -35,6 +35,8 @@ final class SceneData {
         final List<Event> events = new ArrayList<>();
         /** What the scene says about each layer, by name ({@code O} records). */
         final Map<String, Layers.Xf> objects = new LinkedHashMap<>();
+        /** The poses set for the close-up Glitcher ({@code K} records), by time. */
+        final List<PoseKeys.Key> keys = new ArrayList<>();
 
         Cut(String name, String song, String program) {
             this.name = name;
@@ -130,6 +132,12 @@ final class SceneData {
                         if (cur != null) {
                             cur.events.add(new Event(Integer.parseInt(p[1]), Double.parseDouble(p[2]), Double.parseDouble(p[3]), unesc(p[4]),
                                     p.length > 5 ? Double.parseDouble(p[5]) : 1));
+                        }
+                    }
+                    case "K" -> {
+                        if (cur != null) {
+                            cur.keys.add(new PoseKeys.Key(Double.parseDouble(p[1]), Double.parseDouble(p[2]), PoseKeys.parse(p.length > 3 ? p[3] : "")));
+                            cur.keys.sort((a, b) -> Double.compare(a.t(), b.t()));
                         }
                     }
                     case "O" -> {

@@ -54,6 +54,11 @@ final class Song2Program implements SceneProgram {
         return out;
     }
 
+    @Override
+    public String capturePose(double ms) {
+        return closeup.capture(ms);
+    }
+
     /** The tilt and push of the columns and of the Glitcher's blows, as the game applies it to what it draws. */
     private Graphics2D camera(Graphics2D g, int w, int h, double t) {
         Graphics2D c = (Graphics2D) g.create();
