@@ -138,6 +138,8 @@ final class GlitcherCloseup {
         int i = lastHit(ms);
         double age = i < 0 ? 1e9 : ms - hits[i];
         double roll = 0.016 * Math.sin(ms / 1300.0) + 0.008 * Math.sin(ms / 470.0), zoom = 1 + 0.018 * Math.sin(ms / 900.0), dx = 0, dy = 0;
+        double[] scn = sceneCamera(ms);
+        if (scn != null) roll += Math.toRadians(scn[7]);                                     // the tilt set for the shot in the editor
         dx += h * 0.010 * Math.sin(ms / 1700.0);
         dy += h * 0.008 * Math.sin(ms / 1100.0 + 1);
         if (ms >= FULL_FROM) {
@@ -199,7 +201,11 @@ final class GlitcherCloseup {
         }
         int rw = Math.max(2, (int) (w * RES)), rh = Math.max(2, (int) (h * RES));
         if (rend == null || rend.width != rw || rend.height != rh) rend = new SoftRenderer(rw, rh);
+        double[] cam = sceneCamera(ms);                                                            // the camera set in the editor, if the scene has one
         rend.camDist = CAM;
+        rend.pivotX = 0;
+        rend.pivotY = 0;
+        rend.camH = 16;
         double anim = animTime(ms);
         // how solid he is: black against the light until 0:38, then switched on with a flash
         double full = smooth((ms - FULL_FROM) / 380.0);
@@ -207,6 +213,24 @@ final class GlitcherCloseup {
         double sf = 0.55 + 0.45 * approach;
         double u = h * 0.031 * sf;                                                                  // screen pixels per skin unit
         double ox = w * 0.44, oy = h * (1.2 + (1 - sf) * 0.62);
+        camYaw = 0;
+        camPitch = 0;
+        if (cam != null) {
+            double dx = cam[0] - cam[3], dy = cam[1] - cam[4], dz = cam[2] - cam[5];
+            double dist = Math.max(4, Math.sqrt(dx * dx + dy * dy + dz * dz));
+            camYaw = -Math.atan2(dx, dz);
+            camPitch = Math.asin(Math.max(-1, Math.min(1, dy / dist)));
+            u = h * 0.5 / Math.tan(Math.toRadians(cam[6] / 2)) / dist;
+            ox = w * 0.5 - cam[3] * u;
+            oy = h * 0.5 + cam[4] * u;
+            rend.camDist = dist;
+            rend.pivotX = cam[3];
+            rend.pivotY = cam[4];
+            rend.camH = cam[4];
+        }
+        sceneDist = rend.camDist;
+        scenePivotX = rend.pivotX;
+        scenePivotY = rend.pivotY;
 
         // ---- the pose
         Pose15 p = actor.begin();
@@ -215,8 +239,8 @@ final class GlitcherCloseup {
         p.rootPos[1] = -0.7 - 0.25 * breath;
         int hi = lastHit(ms);
         double hage = hi < 0 ? 1e9 : ms - hits[hi];
-        actor.viewYaw = 0.07 * Math.sin(ms / 1100.0) + (ms >= FULL_FROM && hage < 400 ? (hi % 2 == 0 ? 1 : -1) * 0.05 * Math.exp(-hage / 120.0) : 0);
-        actor.viewPitch = 0.03 * Math.sin(ms / 1700.0);
+        actor.viewYaw = camYaw + 0.07 * Math.sin(ms / 1100.0) + (ms >= FULL_FROM && hage < 400 ? (hi % 2 == 0 ? 1 : -1) * 0.05 * Math.exp(-hage / 120.0) : 0);
+        actor.viewPitch = camPitch + 0.03 * Math.sin(ms / 1700.0);
         // ---- the dance: which blow he is winding up for, or which rest he is in
         Seg rs = ms >= FULL_FROM ? restAt(ms) : null;
         double rww = rs == null ? 0 : restWeight(rs, ms);
@@ -397,14 +421,23 @@ final class GlitcherCloseup {
 
     /** A point of the body as it is seen from the camera: {x right, y up}, in skin units from the feet, with the perspective. */
     private double[] proj(double[] st) {
-        double[] p = st;
         double yaw = actor.viewYaw, pitch = actor.viewPitch;
-        double c = Math.cos(yaw), s = Math.sin(yaw);
-        p = new double[]{p[0] * c + p[2] * s, p[1], -p[0] * s + p[2] * c};
+        double x = st[0] - scenePivotX, y = st[1] - scenePivotY, z = st[2];
+        double c = Math.cos(yaw), sn = Math.sin(yaw);
+        double x1 = x * c + z * sn, z1 = -x * sn + z * c;
         double c2 = Math.cos(pitch), s2 = Math.sin(pitch);
-        p = new double[]{p[0], p[1] * c2 - p[2] * s2, p[1] * s2 + p[2] * c2};
-        double k = CAM / Math.max(2, CAM - p[2]);
-        return new double[]{p[0] * k, p[1] * k};
+        double y2 = y * c2 - z1 * s2, z2 = y * s2 + z1 * c2;
+        double k = sceneDist / Math.max(2, sceneDist - z2);
+        return new double[]{scenePivotX + x1 * k, scenePivotY + y2 * k};
+    }
+
+    private double camYaw, camPitch, sceneDist = CAM, scenePivotX, scenePivotY;
+    private static final String CUT_NAME = "Песня 2";
+
+    /** The camera of this scene as it stands in the editor's project ({x, y, z, target x, y, z, fov, roll}), or null to keep the old fixed view. */
+    private double[] sceneCamera(double ms) {
+        SceneData.Cut cut = SceneData.current().cut(CUT_NAME);
+        return cut == null ? null : cut.cameraAt(ms);
     }
 
     /** A jagged white mouth, wide open, in the middle of the face. */

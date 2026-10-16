@@ -39,6 +39,7 @@ struct Shot {
     double t0, t1;
     Camera cam;
     std::string note;
+    bool move = false;      // glides to the camera of the next shot over its own length
 };
 struct Cut {
     std::string name = "Новая сцена";
@@ -89,9 +90,9 @@ std::string unesc(const std::string& s) {
 }
 
 void defaultShots(Cut& c) {
-    c.shots.push_back({"Общий", 0, 19, {{0, 18, 62}, {0, 16, 0}, 40, 0}, "Фигура целиком"});
-    c.shots.push_back({"Лицо", 19, 38, {{0, 29, 30}, {0, 28, 0}, 34, 0}, "Крупно, лицо"});
-    c.shots.push_back({"Рука", 38, 56, {{-16, 19, 24}, {-6, 19, 0}, 36, 4}, "Рука у стекла"});
+    c.shots.push_back({"Общий", 0, 19, {{0, 18, 62}, {0, 16, 0}, 40, 0}, "Фигура целиком", false});
+    c.shots.push_back({"Лицо", 19, 38, {{0, 29, 30}, {0, 28, 0}, 34, 0}, "Крупно, лицо", false});
+    c.shots.push_back({"Рука", 38, 56, {{-16, 19, 24}, {-6, 19, 0}, 36, 4}, "Рука у стекла", false});
 }
 
 void saveProject() {
@@ -144,6 +145,7 @@ void loadProject() {
                 s.cam.fov = std::stof(p[6]);
                 s.cam.roll = std::stof(p[7]);
                 s.note = unesc(p[8]);
+                s.move = p.size() > 9 && p[9] == "1";
                 gCuts.back().shots.push_back(s);
             } else if (p[0] == "E" && p.size() >= 5 && !gCuts.empty()) {
                 Ev e;
@@ -500,6 +502,7 @@ void shotInspector() {
     ImGui::DragFloat3("Куда смотрит", &s.cam.target.x, 0.1f);
     ImGui::SliderFloat("Угол обзора", &s.cam.fov, 10, 100, "%.0f°");
     ImGui::SliderFloat("Наклон", &s.cam.roll, -45, 45, "%.1f°");
+    ImGui::Checkbox("Плавно к камере следующего кадра", &s.move);
     if (ImGui::Button("Записать текущий вид в кадр")) {
         Camera c = gFree ? gOrbit.camera() : s.cam;
         c.fov = s.cam.fov;

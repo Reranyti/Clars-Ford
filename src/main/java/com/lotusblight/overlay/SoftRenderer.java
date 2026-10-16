@@ -129,6 +129,8 @@ final class SoftRenderer {
      * perspective: what is nearer the camera (z towards it) is bigger, textures are mapped with the depth taken into account.
      */
     double camDist = 0;
+    /** The point the camera looks at and turns the figure about (x, y), and the height the camera stands at, in skin units; 0, 0, 16 is the old chest-high view. */
+    double pivotX = 0, pivotY = 0, camH = 16;
     private boolean perspective;
 
     void drawRig(Rig15 rig, Rig15.Skel sk, int[] skin, double viewYaw, double viewPitch, double scale, double originX, double originY) {
@@ -136,7 +138,13 @@ final class SoftRenderer {
         perspective = camDist > 0;
         for (Rig15.Face face : rig.faces) {
             for (int i = 0; i < 4; i++) {
-                p[i] = rotateX(rotateY(sk.carry(face.joint(), face.corners()[i]), viewYaw), viewPitch);
+                double[] c0 = sk.carry(face.joint(), face.corners()[i]);
+                if (perspective) {                                                         // the figure is turned about the point the camera looks at
+                    double[] q = rotateX(rotateY(new double[]{c0[0] - pivotX, c0[1] - pivotY, c0[2]}, viewYaw), viewPitch);
+                    p[i] = new double[]{q[0] + pivotX, q[1] + pivotY, q[2]};
+                } else {
+                    p[i] = rotateX(rotateY(c0, viewYaw), viewPitch);
+                }
             }
             double[] n = normalize(cross(sub(p[3], p[0]), sub(p[1], p[0])));
             double[][] s = new double[4][];
@@ -145,7 +153,7 @@ final class SoftRenderer {
                     {face.u1(), face.v1()}, {face.u0(), face.v1()}};
             if (perspective) {
                 // the face must look towards the camera, which stands in front of the figure at the height of its chest
-                double[] toCam = {-p[0][0], 16 - p[0][1], camDist - p[0][2]};
+                double[] toCam = {pivotX - p[0][0], camH - p[0][1], camDist - p[0][2]};
                 if (dot(n, toCam) <= 1e-6) continue;
                 boolean behind = false;
                 for (int i = 0; i < 4; i++) {
@@ -155,7 +163,7 @@ final class SoftRenderer {
                         break;
                     }
                     double k = camDist / zc, inv = 1.0 / zc;
-                    s[i] = new double[]{originX + p[i][0] * scale * k, originY - p[i][1] * scale * k, inv};
+                    s[i] = new double[]{originX + (pivotX + (p[i][0] - pivotX) * k) * scale, originY - (pivotY + (p[i][1] - pivotY) * k) * scale, inv};
                     uv[i] = new double[]{uv[i][0] * inv, uv[i][1] * inv};              // divided by the depth, to be divided back per pixel
                 }
                 if (behind) continue;

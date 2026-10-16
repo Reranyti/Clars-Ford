@@ -18,7 +18,7 @@ import java.util.Map;
 final class SceneData {
     static final String[] TRACKS = {"camera", "text", "effects", "actor", "snakes"};
 
-    record Shot(String name, double from, double to, double[] pos, double[] target, double fov, double roll, String note) {}
+    record Shot(String name, double from, double to, double[] pos, double[] target, double fov, double roll, String note, boolean move) {}
 
     record Event(int track, double from, double to, String label, double value) {
         boolean at(double ms) {
@@ -42,6 +42,25 @@ final class SceneData {
             Shot best = null;
             for (Shot s : shots) if (s.from * 1000 <= ms && (best == null || s.from >= best.from)) best = s;
             return best == null && !shots.isEmpty() ? shots.get(0) : best;
+        }
+
+        /**
+         * The camera at a time: {x, y, z, target x, y, z, fov, roll}. A shot marked "move" glides (smoothly) to the camera of the next one
+         * over its own length; the others hold still.
+         */
+        double[] cameraAt(double ms) {
+            Shot s = shotAt(ms);
+            if (s == null) return null;
+            double[] c = {s.pos[0], s.pos[1], s.pos[2], s.target[0], s.target[1], s.target[2], s.fov, s.roll};
+            if (!s.move) return c;
+            Shot next = null;
+            for (Shot o : shots) if (o.from > s.from && (next == null || o.from < next.from)) next = o;
+            if (next == null || next.to <= next.from) return c;
+            double k = Math.max(0, Math.min(1, (ms / 1000.0 - s.from) / Math.max(0.001, next.from - s.from)));
+            k = k * k * (3 - 2 * k);
+            double[] d = {next.pos[0], next.pos[1], next.pos[2], next.target[0], next.target[1], next.target[2], next.fov, next.roll};
+            for (int i = 0; i < 8; i++) c[i] += (d[i] - c[i]) * k;
+            return c;
         }
 
         /** The events of a track that are on at the time. */
@@ -93,7 +112,7 @@ final class SceneData {
                     case "S" -> {
                         if (cur != null) {
                             cur.shots.add(new Shot(unesc(p[1]), Double.parseDouble(p[2]), Double.parseDouble(p[3]), vec(p[4]), vec(p[5]),
-                                    Double.parseDouble(p[6]), Double.parseDouble(p[7]), p.length > 8 ? unesc(p[8]) : ""));
+                                    Double.parseDouble(p[6]), Double.parseDouble(p[7]), p.length > 8 ? unesc(p[8]) : "", p.length > 9 && p[9].equals("1")));
                         }
                     }
                     case "E" -> {
@@ -111,6 +130,36 @@ final class SceneData {
             }
         }
         return d;
+    }
+
+    private static SceneData live;
+    private static long liveStamp, liveChecked;
+
+    /**
+     * The scenes now: while developing (-Dlotos.scenes=path to the editor's project.txt) the file is read straight from the editor and read again
+     * whenever it is saved there, so a change in the editor shows in the game at once; otherwise the ones shipped with the game.
+     */
+    static synchronized SceneData current() {
+        String path = System.getProperty("lotos.scenes");
+        if (path == null) {
+            if (live == null) live = load();
+            return live;
+        }
+        long now = System.currentTimeMillis();
+        if (live == null || now - liveChecked > 400) {
+            liveChecked = now;
+            java.io.File f = new java.io.File(path);
+            if (f.exists() && (live == null || f.lastModified() != liveStamp)) {
+                try (BufferedReader r = java.nio.file.Files.newBufferedReader(f.toPath(), StandardCharsets.UTF_8)) {
+                    live = parse(r);
+                    liveStamp = f.lastModified();
+                } catch (IOException ignored) {
+                    // kept as it was
+                }
+            }
+            if (live == null) live = load();
+        }
+        return live;
     }
 
     /** The scenes shipped with the game; an empty set when there are none. */

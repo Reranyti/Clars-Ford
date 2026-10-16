@@ -213,6 +213,16 @@ final class Interlude {
      * @param freed 0 while he is held, growing to 1 as he is let go and drops
      */
     private void drawStrangle(Graphics2D b, int w, int h, double c, double m, boolean limp, double freed) {
+        java.awt.geom.AffineTransform keepT = b.getTransform();
+        double punch = punchAt(c);
+        if (punch > 0.01) {
+            // zoom a little past the frame, so the shake never shows an edge
+            double sc = 1.035 + 0.03 * punch;
+            Random pr = new Random((long) (c / 28));
+            b.translate(w / 2.0 + (pr.nextDouble() - 0.5) * h * 0.016 * punch, h / 2.0 + (pr.nextDouble() - 0.5) * h * 0.016 * punch);
+            b.scale(sc, sc);
+            b.translate(-w / 2.0, -h / 2.0);
+        }
         double unit = h * 0.62 / 32.0;
         if (glitcherRender == null || figureUnit != unit) {
             figureUnit = unit;
@@ -231,6 +241,11 @@ final class Interlude {
 
         double t = c / 1000.0;
         double ground = h * 0.92;
+        double portalGlow = c >= PORTAL_FROM && winAt < 0 ? smooth((c - PORTAL_FROM) / 1800.0) * (1 - smooth((c - 20_600) / 1000.0)) : 0;
+        double dangerLevel = winAt < 0 && c >= RIFT_END ? 1 - Math.min(1, Math.max(0, RIFT_END + CHOKE_MS - c) / CHOKE_MS) : 0;
+        // A cold key light from above-left; the portal warms the left of the room to violet; the danger turns the shadows red.
+        double[] key = {1.18 + 0.30 * dangerLevel, 1.16 - 0.10 * dangerLevel, 1.42 - 0.25 * dangerLevel};
+        double[] amb = {0.78 + 0.10 * dangerLevel + 0.06 * portalGlow, 0.75 - 0.05 * dangerLevel, 0.95 + 0.06 * portalGlow};
         double turnPos = smooth((c - 14_300) / 1300.0);                      // he stands in the middle to speak, then steps aside to the portal's line
         double gx = w * (0.5 + 0.13 * turnPos + 0.14 * m + 0.13 * freed);
         double px = w * 0.2, py = h * 0.5;                                   // the portal stands on the left
@@ -287,7 +302,10 @@ final class Interlude {
             a.spread = 1 - 0.7 * hold;
         }
         glitcherRender.clear();
+        glitcherRender.setLight(key, amb);
         glitcherActor.draw(glitcherRender, unit, glitcherRender.width / 2.0, glitcherRender.height - 6 * unit);
+        lightEdges(glitcherRender, unit, portalGlow, dangerLevel, 1);
+        ActorFx.floorShadow(b, gx, ground + 0.8 * unit, 8.5 * unit, 1.5 * unit, 0.85);
         double gDrawX = gx - glitcherRender.width / 2.0;
         double gDrawY = ground - glitcherRender.height + 6 * unit;
         hitBox.setRect(gx - 10 * unit, ground - 36 * unit, 20 * unit, 38 * unit);
@@ -340,7 +358,9 @@ final class Interlude {
             a.fistR = a.fistL = arrive * (0.3 * flail * clutch);
             a.spread = 0.4 + 0.6 * limpW;
             honchoRender.clear();
+            honchoRender.setLight(key, amb);
             honchoActor.draw(honchoRender, unit, honchoRender.width / 2.0, honchoRender.height - 6 * unit);
+            lightEdges(honchoRender, unit, portalGlow, dangerLevel, 0.25 + 0.75 * arrive);
             double drop = freed * freed * h * 0.9;
             java.awt.Shape keepClip = b.getClip();
             if (ex < 0.22) b.clip(new java.awt.geom.Rectangle2D.Double(px, 0, w, h));   // he is still coming through the portal
@@ -351,6 +371,10 @@ final class Interlude {
                     drawHoncho(b, unit, gp[0], gp[1], gp[2], gp[3], 1, 1, 0.2 / g, false);
                 }
             }
+            double aboveFloor = Math.max(0, ground - (flight[1] + drop));
+            double hs = Math.max(0.15, flight[3]);
+            ActorFx.floorShadow(b, flight[0], ground + 0.8 * unit, (7.5 + 3 * Math.min(1, aboveFloor / (h * 0.5))) * unit * hs,
+                    1.3 * unit * hs, 0.7 * Math.exp(-aboveFloor / (h * 0.55)) * (1 - 0.8 * freed));
             double sx = 1 - 0.45 * smooth(1 - ex / 0.12) * (ex < 0.12 ? 1 : 0), sy = 1 + 0.3 * (ex < 0.12 ? smooth(1 - ex / 0.12) : 0) - 0.07 * impact;
             double shakeX = (Math.random() - 0.5) * h * 0.012 * impact, shakeY = (Math.random() - 0.5) * h * 0.012 * impact;
             drawHoncho(b, unit, flight[0] + shakeX, flight[1] + drop + shakeY, flight[2] + pend + 0.36 * arrive * (1 - freed) + 0.3 * freed + Math.sin(t * 8) * 0.03 * flail, flight[3], sx, sy, 1, true);
@@ -379,6 +403,23 @@ final class Interlude {
             b.setColor(new Color(255, 255, 255, (int) (60 * (1 - since / 140.0))));
             b.fillRect(0, 0, w, h);
         }
+        b.setTransform(keepT);
+    }
+
+    /** How hard the picture is being struck right now, 0..1: the portal tearing open, Honcho caught by the throat, a push. */
+    private double punchAt(double c) {
+        double portal = c >= PORTAL_FROM ? Math.exp(-(c - PORTAL_FROM) / 200.0) * 0.9 : 0;
+        double caught = c >= GRAB_FROM + 500 ? Math.exp(-(c - (GRAB_FROM + 500)) / 170.0) : 0;
+        double push = c - lastPress >= 0 && c - lastPress < 160 ? 0.4 * (1 - (c - lastPress) / 160.0) : 0;
+        return Math.max(portal, Math.max(caught, push));
+    }
+
+    /** The coloured light along the edges of a figure: cold from above-left, violet from the portal, red from the right as time runs out. */
+    private static void lightEdges(SoftRenderer r, double unit, double portalGlow, double danger, double weight) {
+        int thick = Math.max(2, (int) Math.round(unit * 0.55));
+        ActorFx.rim(r, 0xA8C4FF, 0.55 * weight, -0.8, 0.8, thick);
+        if (portalGlow > 0.02) ActorFx.rim(r, 0xB38CFF, 0.95 * portalGlow * weight, -1, 0.1, thick + 1);
+        if (danger > 0.02) ActorFx.rim(r, 0xFF3A55, 0.9 * danger * weight, 1, 0.2, thick);
     }
 
     /** Honcho's neck on the way from the portal to the fist: {x, y, turn (rad), scale}. Fast off the mark, slowing as he arrives. */

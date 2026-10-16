@@ -395,7 +395,7 @@ class Lab:
         if missing:
             self.say("Нет дорожек для боя: " + ", ".join(str(m) for m in missing))
             return
-        cmd = [JAVA, "-Xmx1500m", "-cp", cp, main] + args
+        cmd = [JAVA, "-Xmx1500m", "-Dlotos.scenes=" + str(ROOT / "tools" / "LotosEditor" / "project.txt"), "-cp", cp, main] + args       # the scenes straight from the editor
         log = OUT / "last_run.log"
         OUT.mkdir(parents=True, exist_ok=True)
         try:
