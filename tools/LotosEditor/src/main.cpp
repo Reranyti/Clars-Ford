@@ -13,6 +13,7 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #include <cstring>
+#include <windows.h>
 
 #include <algorithm>
 #include <cmath>
@@ -106,6 +107,23 @@ void saveProject() {
         for (const Ev& e : c.events) f << "E\t" << e.track << '\t' << e.t0 << '\t' << e.t1 << '\t' << esc(e.label) << '\t' << e.value << '\n';
     }
     gStatus = "Сохранено";
+}
+
+// the real fight, started from the second where the play head stands, with the scenes straight from this project
+void launchFight(double t) {
+    saveProject();
+    char cmd[512];
+    std::snprintf(cmd, sizeof cmd, "pythonw \"%s/../FightLab/run_fight.py\" song2 %.2f", kRoot.c_str(), t);
+    STARTUPINFOA si = {};
+    si.cb = sizeof si;
+    PROCESS_INFORMATION pi = {};
+    if (CreateProcessA(nullptr, cmd, nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        gStatus = "Бой запускается с " + std::to_string((int) t) + " с (собираю изменения…)";
+    } else {
+        gStatus = "Не удалось запустить бой (нужен pythonw в PATH)";
+    }
 }
 
 std::vector<std::string> split(const std::string& line) {
@@ -591,6 +609,8 @@ void topBar() {
     ImGui::PopStyleColor();
     ImGui::SameLine(0, 30);
     if (ImGui::Button("Сохранить")) saveProject();
+    ImGui::SameLine();
+    if (ImGui::Button("▶ Бой отсюда")) launchFight(gHead);
     ImGui::SameLine();
     ImGui::TextDisabled("%s", gStatus.c_str());
     ImGui::Separator();
