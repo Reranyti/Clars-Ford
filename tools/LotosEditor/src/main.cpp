@@ -755,12 +755,39 @@ double gDragOff = 0.0;
 
 // ---- the poses of the body
 int gSelKey = -1, gSelJoint = 2;
-const struct { const char* id; const char* label; } kJoints[15] = {
+const struct { const char* id; const char* label; } kJoints[35] = {
     {"lower_torso", "Таз (низ корпуса)"}, {"upper_torso", "Грудь"}, {"head", "Голова"},
     {"r_upper_arm", "Правое плечо"}, {"r_lower_arm", "Правый локоть"}, {"r_hand", "Правая кисть"},
     {"l_upper_arm", "Левое плечо"}, {"l_lower_arm", "Левый локоть"}, {"l_hand", "Левая кисть"},
     {"r_upper_leg", "Правое бедро"}, {"r_lower_leg", "Правое колено"}, {"r_foot", "Правая стопа"},
-    {"l_upper_leg", "Левое бедро"}, {"l_lower_leg", "Левое колено"}, {"l_foot", "Левая стопа"}};
+    {"l_upper_leg", "Левое бедро"}, {"l_lower_leg", "Левое колено"}, {"l_foot", "Левая стопа"},
+    {"r_thumb_1", "Большой, основание"}, {"r_thumb_2", "Большой, кончик"}, {"r_index_1", "Указательный, основание"}, {"r_index_2", "Указательный, кончик"},
+    {"r_middle_1", "Средний, основание"}, {"r_middle_2", "Средний, кончик"}, {"r_ring_1", "Безымянный, основание"}, {"r_ring_2", "Безымянный, кончик"},
+    {"r_pinky_1", "Мизинец, основание"}, {"r_pinky_2", "Мизинец, кончик"},
+    {"l_thumb_1", "Большой, основание"}, {"l_thumb_2", "Большой, кончик"}, {"l_index_1", "Указательный, основание"}, {"l_index_2", "Указательный, кончик"},
+    {"l_middle_1", "Средний, основание"}, {"l_middle_2", "Средний, кончик"}, {"l_ring_1", "Безымянный, основание"}, {"l_ring_2", "Безымянный, кончик"},
+    {"l_pinky_1", "Мизинец, основание"}, {"l_pinky_2", "Мизинец, кончик"}};
+const char* kFingerNames[5] = {"Большой", "Указательный", "Средний", "Безымянный", "Мизинец"};
+const char* kFingerIds[5] = {"thumb", "index", "middle", "ring", "pinky"};
+
+// the shape of one finger from how far it is closed (0 open .. 1 a fist): the same curve the game's hands use
+void setFinger(Key& k, bool right, int f, float curl) {
+    static const float amount[5][2] = {{42, 58}, {82, 92}, {88, 95}, {92, 98}, {94, 100}};
+    float c = std::max(0.0f, std::min(1.0f, curl)), sign = right ? 1.0f : -1.0f;
+    float a = amount[f][0] * c, b = amount[f][1] * c;
+    std::string base = std::string(right ? "r_" : "l_") + kFingerIds[f] + "_";
+    if (f == 0) k.v[base + "1"] = {0, -sign * (8 + 22 * c), sign * (a - 16 * (1 - c))};
+    else k.v[base + "1"] = {(f - 2.5f) * 8 * 0.3f * (1 - c), 0, sign * a};
+    k.v[base + "2"] = {0, 0, sign * b};
+}
+
+float fingerCurl(const Key& k, bool right, int f) {
+    static const float amount[5][2] = {{42, 58}, {82, 92}, {88, 95}, {92, 98}, {94, 100}};
+    auto it = k.v.find(std::string(right ? "r_" : "l_") + kFingerIds[f] + "_2");
+    if (it == k.v.end() || it->second.size() < 3) return 0;
+    float sign = right ? 1.0f : -1.0f;
+    return std::max(0.0f, std::min(1.0f, sign * it->second[2] / amount[f][1]));
+}
 const char* kLimbIds[4] = {"r_arm", "l_arm", "r_leg", "l_leg"};
 const char* kLimbNames[4] = {"Правая рука (кулак)", "Левая рука (кулак)", "Правая нога (щиколотка)", "Левая нога (щиколотка)"};
 
@@ -1215,7 +1242,35 @@ void posePanel() {
         std::snprintf(b, sizeof b, "%s %s##j%d", has ? "●" : "○", kJoints[i].label, i);
         if (ImGui::Selectable(b, i == gSelJoint)) gSelJoint = i;
     }
-    gSelJoint = std::max(0, std::min(14, gSelJoint));
+    for (int hand = 0; hand < 2; hand++) {                                    // the fingers, one by one
+        bool right = hand == 0;
+        int first = 15 + hand * 10;
+        if (!ImGui::TreeNode(right ? "Пальцы правой руки" : "Пальцы левой руки")) continue;
+        if (ImGui::Button("Открыть")) for (int f = 0; f < 5; f++) setFinger(k, right, f, 0);
+        ImGui::SameLine();
+        if (ImGui::Button("Кулак")) for (int f = 0; f < 5; f++) setFinger(k, right, f, 1);
+        ImGui::SameLine();
+        if (ImGui::Button("Хват")) for (int f = 0; f < 5; f++) setFinger(k, right, f, 0.7f);
+        ImGui::SameLine();
+        if (ImGui::Button("Указательный")) {
+            for (int f = 0; f < 5; f++) setFinger(k, right, f, f == 1 ? 0.0f : 1.0f);
+        }
+        for (int f = 0; f < 5; f++) {
+            float c = fingerCurl(k, right, f);
+            char lb[64];
+            std::snprintf(lb, sizeof lb, "%s##curl%d_%d", kFingerNames[f], hand, f);
+            if (ImGui::SliderFloat(lb, &c, 0, 1, "изгиб %.2f")) setFinger(k, right, f, c);
+        }
+        ImGui::TextDisabled("Сустав по отдельности:");
+        for (int i = first; i < first + 10; i++) {
+            bool has = k.v.count(kJoints[i].id) > 0;
+            char b[96];
+            std::snprintf(b, sizeof b, "%s %s %s##j%d", has ? "●" : "○", kFingerNames[(i - first) / 2], ((i - first) % 2) ? "кончик" : "основание", i);
+            if (ImGui::Selectable(b, i == gSelJoint)) gSelJoint = i;
+        }
+        ImGui::TreePop();
+    }
+    gSelJoint = std::max(0, std::min(34, gSelJoint));
     const char* jid = kJoints[gSelJoint].id;
     std::vector<float> cur = k.v.count(jid) ? k.v[jid] : std::vector<float>{0, 0, 0};
     cur.resize(3);

@@ -54,7 +54,12 @@ final class Actor {
     }
 
     /** Starts a frame: everything at rest, the hands loose. */
+    /** The author's own turns of the finger joints (the editor's pose keys), laid over the shaped fingers at the end of the frame: the turn and how much it counts. */
+    final Quat[] keyedRot = new Quat[Rig15.N];
+    final double[] keyedW = new double[Rig15.N];
+
     Pose15 begin() {
+        java.util.Arrays.fill(keyedW, 0);
         pose.reset();
         viewYaw = 0;
         viewPitch = 0;
@@ -110,6 +115,9 @@ final class Actor {
         double t = (now - born) / 1e9;
         shapeFingers(dt, t);
         followThrough(dt);
+        for (int j = Rig15.BODY_JOINTS; j < Rig15.N; j++) {                    // the fingers the author has posed one by one
+            if (keyedW[j] > 0 && keyedRot[j] != null) pose.rot[j] = Quat.slerp(pose.rot[j], keyedRot[j], Math.min(1, keyedW[j]));
+        }
         primed = true;
         Rig15.Skel sk = rig.solve(pose);
         lastSkel = sk;

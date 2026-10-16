@@ -98,7 +98,10 @@ final class PoseKeys {
                 if (j == null || va.length < 3 || vb.length < 3) continue;
                 Quat q = Quat.slerp(Quat.euler(va[0], va[1], va[2]), Quat.euler(vb[0], vb[1], vb[2]), u);
                 if (j == Rig15.Joint.LOWER_TORSO) p.rootRot = Quat.slerp(p.rootRot, q, w);
-                else p.rot[j.ordinal()] = Quat.slerp(p.rot[j.ordinal()], q, w);
+                else if (j.ordinal() >= Rig15.BODY_JOINTS) {                  // a finger: the actor lays it over the hand's own shape when it draws
+                    actor.keyedRot[j.ordinal()] = q;
+                    actor.keyedW[j.ordinal()] = w;
+                } else p.rot[j.ordinal()] = Quat.slerp(p.rot[j.ordinal()], q, w);
             }
         }
     }
@@ -107,7 +110,6 @@ final class PoseKeys {
     static String dump(Pose15 p) {
         StringBuilder sb = new StringBuilder();
         for (Rig15.Joint j : Rig15.Joint.values()) {
-            if (j.ordinal() >= Rig15.BODY_JOINTS) break;                                         // the fingers have their own shapes
             Quat q = j == Rig15.Joint.LOWER_TORSO ? p.rootRot : p.rot[j.ordinal()];
             double[] e = q.toEuler();
             sb.append(String.format(Locale.ROOT, "%s=%.2f,%.2f,%.2f;", j.key(), e[0], e[1], e[2]));
