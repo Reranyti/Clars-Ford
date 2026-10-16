@@ -893,11 +893,64 @@ std::string timecode(double t) {
 }
 
 // the monitor: the picture, the safe zones and, under it, the timecode with the transport
-void monitorPanel() {
-    ImGui::Begin("Монитор");
+bool gMonMax = false;
+
+// drags the camera of a shot by the mouse: mode 0 slides it sideways and up, 1 turns it about what it looks at
+void dragCamera(Camera& c, float dx, float dy, int mode, float imageH) {
+    V3 v = c.pos - c.target;
+    float dist = std::max(1.0f, std::sqrt(dot(v, v)));
+    V3 fwd = v * (-1.0f / dist);
+    V3 right = norm(cross(fwd, V3{0, 1, 0}));
+    V3 up = cross(right, fwd);
+    if (mode == 0) {
+        float k = dist * 2.0f * std::tan(c.fov * 3.14159265f / 360.0f) / std::max(1.0f, imageH);
+        V3 shift = right * (-dx * k) + up * (dy * k);
+        c.pos = c.pos + shift;
+        c.target = c.target + shift;
+    } else {
+        float yaw = std::atan2(v.x, v.z) - dx * 0.006f;
+        float pitch = std::max(-1.45f, std::min(1.45f, std::asin(std::max(-1.0f, std::min(1.0f, v.y / dist))) + dy * 0.006f));
+        float r = dist * std::cos(pitch);
+        c.pos = c.target + V3{r * std::sin(yaw), dist * std::sin(pitch), r * std::cos(yaw)};
+    }
+}
+
+// the mouse over the picture works the camera of the shot that is on: the left button slides it, the right one turns it, the wheel comes
+// nearer, with Shift the wheel changes the angle of view
+void cameraByMouse(ImVec2 pos, ImVec2 size) {
+    ImGui::SetCursorScreenPos(pos);
+    ImGui::InvisibleButton("##monitor", size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
+    std::vector<Shot>& shots = cut().shots;
+    if (shots.empty()) return;
+    int idx = std::min(activeShot(gHead), (int) shots.size() - 1);
+    ImGuiIO& io = ImGui::GetIO();
+    bool hover = ImGui::IsItemHovered();
+    if (hover) ImGui::SetTooltip("ЛКМ — двигать камеру, ПКМ — вращать, колесо — приближать, Shift+колесо — угол обзора");
+    Camera& c = shots[idx].cam;
+    bool left = ImGui::IsItemActive() && ImGui::IsMouseDragging(0, 0), right = ImGui::IsMouseDown(1) && hover;
+    if ((left || (ImGui::IsItemActive() && ImGui::IsMouseDragging(1, 0)) || ImGui::IsItemActive() && ImGui::IsMouseDragging(2, 0))) {
+        gSelShot = idx;
+        dragCamera(c, io.MouseDelta.x, io.MouseDelta.y, ImGui::IsMouseDragging(0, 0) && !io.KeyShift ? 0 : 1, size.y);
+        gFree = false;
+    }
+    (void) right;
+    if (hover && io.MouseWheel != 0) {
+        gSelShot = idx;
+        if (io.KeyShift) {
+            c.fov = std::max(8.0f, std::min(110.0f, c.fov - io.MouseWheel * 2.0f));
+        } else {
+            V3 v = c.pos - c.target;
+            c.pos = c.target + v * std::pow(0.9f, io.MouseWheel);
+        }
+    }
+}
+
+void monitorBody() {
     ImGui::Checkbox("Вид из игры", &gGameView);
     ImGui::SameLine();
     ImGui::Checkbox("Безопасные зоны", &gSafe);
+    ImGui::SameLine();
+    if (ImGui::Button(gMonMax ? "Свернуть (F11)" : "Развернуть (F11)")) gMonMax = !gMonMax;
     ImGui::SameLine();
     ImGui::TextDisabled("%s", gPreview.state.c_str());
     const float controlsH = 58;
@@ -920,6 +973,7 @@ void monitorPanel() {
         } else {
             ImGui::Dummy(ImVec2(w, h));
         }
+        if (gGameView && gPreview.ready) cameraByMouse(imgPos, ImVec2(w, h));
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddRect(imgPos, ImVec2(imgPos.x + w, imgPos.y + h), IM_COL32(18, 18, 18, 255));
         if (gSafe) {
@@ -963,6 +1017,25 @@ void monitorPanel() {
         for (const Shot& sh : shots) if (sh.t0 > gHead + 0.05 && sh.t0 < next) next = sh.t0;
         seek(next);
     }
+}
+
+void monitorPanel() {
+    if (gMonMax) return;
+    ImGui::Begin("Монитор");
+    monitorBody();
+    ImGui::End();
+}
+
+// the monitor over the whole window (F11), for working with the picture large
+void monitorFull() {
+    if (!gMonMax) return;
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->WorkPos);
+    ImGui::SetNextWindowSize(vp->WorkSize);
+    ImGui::SetNextWindowFocus();
+    ImGui::Begin("Монитор (во весь экран)", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking);
+    monitorBody();
     ImGui::End();
 }
 
@@ -1190,6 +1263,8 @@ int main(int argc, char** argv) {
             if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) seek(gHead - (io.KeyShift ? 1.0 : 0.04));
             if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) seek(gHead + (io.KeyShift ? 1.0 : 0.04));
             if (ImGui::IsKeyPressed(ImGuiKey_F)) gFree = !gFree;
+            if (ImGui::IsKeyPressed(ImGuiKey_F11)) gMonMax = !gMonMax;
+            if (gMonMax && ImGui::IsKeyPressed(ImGuiKey_Escape)) gMonMax = false;
         }
         if (gPlaying && gSoundOk) gHead = soundPos();
         if (!ImGui::IsMouseDown(0)) trackHistory();
@@ -1226,6 +1301,7 @@ int main(int argc, char** argv) {
         }
         gSceneOk = sceneOk;
         monitorPanel();
+        monitorFull();
         projectPanel();
         propsPanel();
         timelinePanel();
