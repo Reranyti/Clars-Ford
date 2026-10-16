@@ -31,6 +31,8 @@ final class SceneData {
         final String song;
         final List<Shot> shots = new ArrayList<>();
         final List<Event> events = new ArrayList<>();
+        /** What the scene says about each layer, by name ({@code O} records). */
+        final Map<String, Layers.Xf> objects = new LinkedHashMap<>();
 
         Cut(String name, String song) {
             this.name = name;
@@ -119,6 +121,12 @@ final class SceneData {
                         if (cur != null) {
                             cur.events.add(new Event(Integer.parseInt(p[1]), Double.parseDouble(p[2]), Double.parseDouble(p[3]), unesc(p[4]),
                                     p.length > 5 ? Double.parseDouble(p[5]) : 1));
+                        }
+                    }
+                    case "O" -> {
+                        if (cur != null) {
+                            cur.objects.put(p[1], new Layers.Xf(p[2].equals("1"), Double.parseDouble(p[3]), Double.parseDouble(p[4]), Double.parseDouble(p[5]),
+                                    Double.parseDouble(p[6]), Double.parseDouble(p[7])));
                         }
                     }
                     default -> {

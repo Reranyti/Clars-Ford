@@ -42,9 +42,27 @@ public final class PreviewMain {
         String line;
         while ((line = r.readLine()) != null) {
             String[] p = line.trim().split("\\s+");
-            if (!p[0].equals("R") || p.length < 4) continue;
+            if (!(p[0].equals("R") && p.length >= 4) && !(p[0].equals("P") && p.length >= 3) && !(p[0].equals("B") && p.length >= 2)) continue;
+            if (p[0].equals("P") && p.length >= 3) {                                  // which layer is under this point of the last picture
+                String id = Layers.keep == null ? null : Layers.pick(Layers.keep, Integer.parseInt(p[1]), Integer.parseInt(p[2]));
+                byte[] b = (id == null ? "" : id).getBytes("UTF-8");
+                out.writeInt(b.length + 1);
+                out.writeByte(1);
+                out.write(b);
+                out.flush();
+                continue;
+            }
+            if (p[0].equals("B") && p.length >= 2) {                                  // the box of a layer in the last picture
+                byte[] b = (Layers.keep == null ? "" : Layers.bounds(Layers.keep, p[1])).getBytes("UTF-8");
+                out.writeInt(b.length + 1);
+                out.writeByte(2);
+                out.write(b);
+                out.flush();
+                continue;
+            }
             double t = Double.parseDouble(p[1]);
             int w = Integer.parseInt(p[2]), h = Integer.parseInt(p[3]);
+            GlitcherCloseup.RES = w >= 1400 ? 0.9 : w >= 1000 ? 0.6 : 0.42;
             if (hazards[0] == null || hazardsH != h) {
                 hazards[0] = new Hazards(skin, h);
                 hazardsH = h;
@@ -54,6 +72,7 @@ public final class PreviewMain {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setColor(new Color(6, 6, 14));
             g.fillRect(0, 0, w, h);
+            Layers.keep = Layers.newKeep();
             try {
                 render(g, w, h, t, contact, columns, closeup, hazards[0], snakes, phrases);
             } catch (RuntimeException e) {
@@ -62,7 +81,8 @@ public final class PreviewMain {
             g.dispose();
             ByteArrayOutputStream png = new ByteArrayOutputStream();
             javax.imageio.ImageIO.write(frame, "png", png);
-            out.writeInt(png.size());
+            out.writeInt(png.size() + 1);
+            out.writeByte(0);
             out.write(png.toByteArray());
             out.flush();
         }
@@ -86,21 +106,21 @@ public final class PreviewMain {
                                Hazards hazards, SnakesFx snakes, PhraseScreen phrases) {
         contact.update(t);
         Graphics2D cam = camera(g, w, h, t, columns, closeup);
-        contact.renderBackdrop(cam, w, h, t);
-        columns.render(cam, w, h, t);
-        closeup.render(cam, w, h, t);
+        Layers.draw(cam, w, h, "backdrop", c -> contact.renderBackdrop(c, w, h, t));
+        Layers.draw(cam, w, h, "columns", c -> columns.render(c, w, h, t));
+        Layers.draw(cam, w, h, "glitcher", c -> closeup.render(c, w, h, t));
         cam.dispose();
-        contact.renderEye(g, w, h, t);
-        hazards.renderCarryover(g, w, h, t);
+        Layers.draw(g, w, h, "eye", c -> contact.renderEye(c, w, h, t));
+        Layers.draw(g, w, h, "windows", c -> hazards.renderCarryover(c, w, h, t));
         Graphics2D cam2 = camera(g, w, h, t, columns, closeup);
-        hazards.renderSong2(cam2, w, h, t);
+        Layers.draw(cam2, w, h, "windows2", c -> hazards.renderSong2(c, w, h, t));
         cam2.dispose();
         Graphics2D cam3 = camera(g, w, h, t, columns, closeup);
-        snakes.render(cam3, w, h, t, ms -> {
+        Layers.draw(cam3, w, h, "snakes", c -> snakes.render(c, w, h, t, ms -> {
             double[] c3 = closeup.hand(ms, h);
             return c3 != null ? c3 : hazards.songTwoHand(ms, w, h);
-        });
+        }));
         cam3.dispose();
-        phrases.render(g, w, h, t);
+        Layers.draw(g, w, h, "phrases", c -> phrases.render(c, w, h, t));
     }
 }

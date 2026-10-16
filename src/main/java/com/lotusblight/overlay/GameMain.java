@@ -695,6 +695,7 @@ public final class GameMain {
                     }
                 }
                 case SONG2 -> {
+                    final double tl = t;
                     g2.update(t);
                     if (recordFile == null) contact.update(t);
                     double gl = ContactBreak.glitchAmount(t);
@@ -713,13 +714,13 @@ public final class GameMain {
                         ContactBreak.blit(g, glitchBuf, w, h, gl, t);
                     } else {
                         Graphics2D cam = cameraGraphics(g, w, h, t);
-                        contact.renderBackdrop(cam, w, h, t);
-                        if (recordFile == null) columns.render(cam, w, h, t);
-                        if (recordFile == null && closeup != null) closeup.render(cam, w, h, t);
+                        Layers.draw(cam, w, h, "backdrop", c -> contact.renderBackdrop(c, w, h, tl));
+                        if (recordFile == null) Layers.draw(cam, w, h, "columns", c -> columns.render(c, w, h, tl));
+                        if (recordFile == null && closeup != null) Layers.draw(cam, w, h, "glitcher", c -> closeup.render(c, w, h, tl));
                         cam.dispose();
-                        if (recordFile == null) contact.renderEye(g, w, h, t);
+                        if (recordFile == null) Layers.draw(g, w, h, "eye", c -> contact.renderEye(c, w, h, tl));
                         drawSong2(g, w, h, t);
-                        if (phraseScreen != null && recordFile == null) phraseScreen.render(g, w, h, t);      // the words, on black, over everything
+                        if (phraseScreen != null && recordFile == null) Layers.draw(g, w, h, "phrases", c -> phraseScreen.render(c, w, h, tl));      // the words, on black, over everything
                         if (recordFile != null) recordHud(g, w, h, t);
                     }
                     if (!g2.alive()) end(Phase.DEFEAT);
@@ -809,19 +810,19 @@ public final class GameMain {
                 if (t >= ANIM_START_MS) karaoke.render(g, w, h, t / 1000.0);
                 g2.render(g, w, h, t);
             } else {
-                if (hazards != null) hazards.renderCarryover(g, w, h, t);
+                if (hazards != null) Layers.draw(g, w, h, "windows", c -> hazards.renderCarryover(c, w, h, t));
                 g2.render(g, w, h, t);
                 // The torn-up backdrop is the Glitcher's windows while the eyes are on; no extra ones on top.
                 if (hazards != null) {
                     Graphics2D cam = cameraGraphics(g, w, h, t);
-                    hazards.renderSong2(cam, w, h, t);
+                    Layers.draw(cam, w, h, "windows2", c -> hazards.renderSong2(c, w, h, t));
                     cam.dispose();
                     if (recordFile == null) {
                         Graphics2D cam2 = cameraGraphics(g, w, h, t);
-                        snakes.render(cam2, w, h, t, ms -> {
+                        Layers.draw(cam2, w, h, "snakes", c -> snakes.render(c, w, h, t, ms -> {
                             double[] c3 = closeup != null ? closeup.hand(ms, h) : null;
                             return c3 != null ? c3 : hazards.songTwoHand(ms, w, h);
-                        });
+                        }));
                         cam2.dispose();
                     }
                 }

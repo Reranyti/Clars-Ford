@@ -26,7 +26,8 @@ final class GlitcherCloseup {
     /** Stretches in which the animation sticks and repeats its first moments: {from, to}, ms. */
     private static final double[][] STUCK = {{43_200, 44_700}, {49_400, 51_000}, {67_600, 68_800}};
     private static final double STUCK_LOOP_MS = 330;
-    private static final double RES = 0.42;
+    /** The size of the soft-rendered figure against the screen: small in the game (it is blocky by nature), raised by the editor for a still picture. */
+    static double RES = 0.42;
     /** The camera stands this far from the figure, in skin units: near enough for the fist that hits to come right at it. */
     private static final double CAM = 46;
 

@@ -47,8 +47,14 @@ struct Shot {
     std::string note;
     bool move = false;      // glides to the camera of the next shot over its own length
 };
+struct Layer {
+    std::string id, name;
+    bool visible = true;
+    float dx = 0, dy = 0, scale = 1, rot = 0, alpha = 1;      // shift (parts of the picture), scale, turn (degrees), opacity
+};
 struct Cut {
     std::string name = "Новая сцена";
+    std::vector<Layer> layers;
     std::string song = "D:/The LOTOS/build/song-test/song2.wav";
     std::vector<Shot> shots;
     std::vector<Ev> events;
@@ -71,6 +77,21 @@ std::string gStatus = "Готов";
 int gMode = 0;                              // 0 storyboard, 1 events and animation
 
 Cut& cut() { return gCuts[gCut]; }
+
+// every visible part of the song's picture, bottom to top (the same names the game draws them under)
+void ensureLayers(Cut& c) {
+    if (!c.layers.empty()) return;
+    const char* list[][2] = {{"backdrop", "Фон"}, {"columns", "Колонки"}, {"glitcher", "Глитчер"}, {"eye", "Глаз"},
+                             {"windows", "Окна (след)"}, {"windows2", "Окна Глитчера"}, {"snakes", "Змеи и телевизор"}, {"phrases", "Чёрные экраны с фразами"}};
+    for (auto& l : list) {
+        Layer y;
+        y.id = l[0];
+        y.name = l[1];
+        c.layers.push_back(y);
+    }
+}
+int gSelLayer = -1;
+int gTool = 0;          // 0 select (click picks a layer, drag moves it), 1 camera
 
 std::vector<double> gBeats;       // seconds
 bool gSnap = true;
@@ -147,6 +168,8 @@ std::string projectText() {
         for (const Shot& s : c.shots)
             f << "S\t" << esc(s.name) << '\t' << s.t0 << '\t' << s.t1 << '\t' << s.cam.pos.x << ' ' << s.cam.pos.y << ' ' << s.cam.pos.z << '\t'
               << s.cam.target.x << ' ' << s.cam.target.y << ' ' << s.cam.target.z << '\t' << s.cam.fov << '\t' << s.cam.roll << '\t' << esc(s.note) << '\t' << (s.move ? 1 : 0) << '\n';
+        for (const Layer& y : c.layers)
+            f << "O\t" << y.id << '\t' << (y.visible ? 1 : 0) << '\t' << y.dx << '\t' << y.dy << '\t' << y.scale << '\t' << y.rot * 3.14159265358979 / 180.0 << '\t' << y.alpha << '\t' << esc(y.name) << '\n';
         for (const Ev& e : c.events) f << "E\t" << e.track << '\t' << e.t0 << '\t' << e.t1 << '\t' << esc(e.label) << '\t' << e.value << '\n';
     }
     return f.str();
@@ -207,6 +230,7 @@ void parseProject(std::istream& f) {
                 gCuts.emplace_back();
                 gCuts.back().name = unesc(p[1]);
                 gCuts.back().song = p[2];
+                ensureLayers(gCuts.back());
             } else if (p[0] == "S" && p.size() >= 9 && !gCuts.empty()) {
                 Shot s;
                 s.name = unesc(p[1]);
@@ -220,6 +244,16 @@ void parseProject(std::istream& f) {
                 s.note = unesc(p[8]);
                 s.move = p.size() > 9 && p[9] == "1";
                 gCuts.back().shots.push_back(s);
+            } else if (p[0] == "O" && p.size() >= 8 && !gCuts.empty()) {
+                for (Layer& y : gCuts.back().layers) {
+                    if (y.id != p[1]) continue;
+                    y.visible = p[2] == "1";
+                    y.dx = std::stof(p[3]);
+                    y.dy = std::stof(p[4]);
+                    y.scale = std::stof(p[5]);
+                    y.rot = std::stof(p[6]) * 180.0f / 3.14159265f;
+                    y.alpha = std::stof(p[7]);
+                }
             } else if (p[0] == "E" && p.size() >= 5 && !gCuts.empty()) {
                 Ev e;
                 e.track = std::stoi(p[1]);
@@ -236,6 +270,7 @@ void parseProject(std::istream& f) {
         gCuts.emplace_back();
         gCuts.back().name = "Песня 2";
     }
+    for (Cut& c : gCuts) ensureLayers(c);
     for (Cut& c : gCuts)
         if (c.shots.empty()) defaultShots(c);
 }
@@ -362,6 +397,11 @@ struct Preview {
     bool fresh = false;
     GLuint tex = 0;
     int texW = 0, texH = 0;
+    std::string pickAnswer, boxAnswer;
+    bool pickReady = false, boxReady = false;
+    bool pickWanted = false, boxWanted = false;
+    int pickX = 0, pickY = 0;
+    std::string boxId;
     double askedT = -1;
     int askedW = 0, askedH = 0;
     double lastAsk = 0;
@@ -446,8 +486,16 @@ struct Preview {
                     if (!readAll(fromJava, b.data(), n)) break;
                     {
                         std::lock_guard<std::mutex> g(lock);
-                        png.swap(b);
-                        fresh = true;
+                        if (b[0] == 0) {                                            // a picture
+                            png.assign(b.begin() + 1, b.end());
+                            fresh = true;
+                        } else if (b[0] == 1) {                                     // the layer under the point
+                            pickAnswer.assign((const char*) b.data() + 1, b.size() - 1);
+                            pickReady = true;
+                        } else if (b[0] == 2) {                                     // the box of a layer
+                            boxAnswer.assign((const char*) b.data() + 1, b.size() - 1);
+                            boxReady = true;
+                        }
                     }
                     busy = false;
                 }
@@ -459,10 +507,32 @@ struct Preview {
     }
 
     // asks for the picture at a moment, if the last one has arrived
+    bool send(const char* line, int n) {
+        DWORD wrote = 0;
+        busy = true;
+        if (!WriteFile(toJava, line, n, &wrote, nullptr)) {
+            ready = false;
+            failed = true;
+            busy = false;
+            return false;
+        }
+        return true;
+    }
+
     void ask(double t, int w, int h, bool force) {
         if (!ready || busy) return;
+        char line[160];
+        if (pickWanted) {
+            pickWanted = false;
+            send(line, std::snprintf(line, sizeof line, "P %d %d\n", pickX, pickY));
+            return;
+        }
+        if (boxWanted && !boxId.empty()) {
+            boxWanted = false;
+            send(line, std::snprintf(line, sizeof line, "B %s\n", boxId.c_str()));
+            return;
+        }
         if (!force && t == askedT && w == askedW && h == askedH) return;
-        char line[96];
         int n = std::snprintf(line, sizeof line, "R %.1f %d %d\n", t * 1000.0, w, h);
         DWORD wrote = 0;
         busy = true;
@@ -894,6 +964,7 @@ std::string timecode(double t) {
 
 // the monitor: the picture, the safe zones and, under it, the timecode with the transport
 bool gMonMax = false;
+std::string gBox;
 
 // drags the camera of a shot by the mouse: mode 0 slides it sideways and up, 1 turns it about what it looks at
 void dragCamera(Camera& c, float dx, float dy, int mode, float imageH) {
@@ -922,18 +993,54 @@ void cameraByMouse(ImVec2 pos, ImVec2 size) {
     ImGui::InvisibleButton("##monitor", size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
     std::vector<Shot>& shots = cut().shots;
     if (shots.empty()) return;
-    int idx = std::min(activeShot(gHead), (int) shots.size() - 1);
     ImGuiIO& io = ImGui::GetIO();
     bool hover = ImGui::IsItemHovered();
+    // the frame of the chosen layer, from the box the game's side measured
+    if (gSelLayer >= 0 && gSelLayer < (int) cut().layers.size()) {
+        std::string box;
+        {
+            std::lock_guard<std::mutex> lk(gPreview.lock);
+            if (gPreview.boxReady) {
+                gBox = gPreview.boxAnswer;
+                gPreview.boxReady = false;
+            }
+        }
+        float x0, y0, x1, y1;
+        if (std::sscanf(gBox.c_str(), "%f %f %f %f", &x0, &y0, &x1, &y1) == 4 && gPreview.askedW > 0) {
+            float k = size.x / gPreview.askedW;
+            ImVec2 a(pos.x + x0 * k, pos.y + y0 * k), b(pos.x + x1 * k, pos.y + y1 * k);
+            ImGui::GetWindowDrawList()->AddRect(a, b, IM_COL32(45, 140, 235, 255), 0, 0, 2.0f);
+            ImGui::GetWindowDrawList()->AddText(ImVec2(a.x + 3, a.y + 2), IM_COL32(45, 140, 235, 255), cut().layers[gSelLayer].name.c_str());
+        }
+    }
+    if (gTool == 0) {
+        if (hover) ImGui::SetTooltip("Клик — выбрать слой, перетащить — двигать, колесо — размер, Shift+колесо — наклон, Delete — скрыть");
+        if (hover && ImGui::IsMouseClicked(0) && gPreview.askedW > 0) {
+            gPreview.pickX = (int) ((io.MousePos.x - pos.x) / size.x * gPreview.askedW);
+            gPreview.pickY = (int) ((io.MousePos.y - pos.y) / size.y * gPreview.askedH);
+            gPreview.pickWanted = true;
+        }
+        if (gSelLayer >= 0 && gSelLayer < (int) cut().layers.size()) {
+            Layer& y = cut().layers[gSelLayer];
+            if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0, 2)) {
+                y.dx += io.MouseDelta.x / size.x;
+                y.dy += io.MouseDelta.y / size.y;
+            }
+            if (hover && io.MouseWheel != 0) {
+                if (io.KeyShift) y.rot += io.MouseWheel * 3.0f;
+                else y.scale = std::max(0.05f, y.scale * std::pow(1.06f, io.MouseWheel));
+            }
+        }
+        return;
+    }
+    int idx = std::min(activeShot(gHead), (int) shots.size() - 1);
     if (hover) ImGui::SetTooltip("ЛКМ — двигать камеру, ПКМ — вращать, колесо — приближать, Shift+колесо — угол обзора");
     Camera& c = shots[idx].cam;
-    bool left = ImGui::IsItemActive() && ImGui::IsMouseDragging(0, 0), right = ImGui::IsMouseDown(1) && hover;
-    if ((left || (ImGui::IsItemActive() && ImGui::IsMouseDragging(1, 0)) || ImGui::IsItemActive() && ImGui::IsMouseDragging(2, 0))) {
+    if (ImGui::IsItemActive() && (ImGui::IsMouseDragging(0, 0) || ImGui::IsMouseDragging(1, 0) || ImGui::IsMouseDragging(2, 0))) {
         gSelShot = idx;
         dragCamera(c, io.MouseDelta.x, io.MouseDelta.y, ImGui::IsMouseDragging(0, 0) && !io.KeyShift ? 0 : 1, size.y);
         gFree = false;
     }
-    (void) right;
     if (hover && io.MouseWheel != 0) {
         gSelShot = idx;
         if (io.KeyShift) {
@@ -945,7 +1052,17 @@ void cameraByMouse(ImVec2 pos, ImVec2 size) {
     }
 }
 
+std::string gBoxDummy;
+
 void monitorBody() {
+    ImGui::PushStyleColor(ImGuiCol_Button, gTool == 0 ? ImVec4(0.18f, 0.55f, 0.92f, 1) : ImVec4(0.23f, 0.23f, 0.23f, 1));
+    if (ImGui::Button("Выбор (V)")) gTool = 0;
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, gTool == 1 ? ImVec4(0.18f, 0.55f, 0.92f, 1) : ImVec4(0.23f, 0.23f, 0.23f, 1));
+    if (ImGui::Button("Камера (C)")) gTool = 1;
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
     ImGui::Checkbox("Вид из игры", &gGameView);
     ImGui::SameLine();
     ImGui::Checkbox("Безопасные зоны", &gSafe);
@@ -964,8 +1081,27 @@ void monitorBody() {
         int idx = std::min(activeShot(gHead), (int) shots.size() - 1);
         if (gGameView && gPreview.ready) {
             gPreview.upload();
-            gPreview.ask(gHead, 960, 540, gForceAsk);
+            // while it plays the picture is small and quick; standing still it is drawn as large as the monitor shows it
+            int qw = gPlaying ? 960 : (w >= 1000 ? 1920 : 1280), qh = qw * 9 / 16;
+            gPreview.ask(gHead, qw, qh, gForceAsk);
             gForceAsk = false;
+            std::string pr;
+            {
+                std::lock_guard<std::mutex> lk(gPreview.lock);
+                if (gPreview.pickReady) {
+                    pr = gPreview.pickAnswer;
+                    gPreview.pickReady = false;
+                    gSelLayer = -1;
+                    for (int i = 0; i < (int) cut().layers.size(); i++)
+                        if (cut().layers[i].id == pr) gSelLayer = i;
+                    gPreview.boxWanted = gSelLayer >= 0;
+                    gPreview.boxId = pr;
+                }
+            }
+            if (gPreview.fresh && gSelLayer >= 0) {
+                gPreview.boxWanted = true;
+                gPreview.boxId = cut().layers[gSelLayer].id;
+            }
             if (gPreview.tex) ImGui::Image((ImTextureID) (intptr_t) gPreview.tex, ImVec2(w, h));
             else ImGui::Dummy(ImVec2(w, h));
         } else if (gSceneOk) {
@@ -1066,6 +1202,20 @@ void projectPanel() {
         ImGui::TextDisabled("%s", timecode(shots[i].t0).substr(3, 5).c_str());
     }
     ImGui::Separator();
+    ImGui::TextDisabled("СЛОИ (сверху вниз)");
+    for (int i = (int) cut().layers.size() - 1; i >= 0; i--) {
+        Layer& y = cut().layers[i];
+        ImGui::PushID(i);
+        ImGui::Checkbox("##vis", &y.visible);
+        ImGui::SameLine();
+        if (ImGui::Selectable(y.name.c_str(), i == gSelLayer)) {
+            gSelLayer = i;
+            gPreview.boxWanted = true;
+            gPreview.boxId = y.id;
+        }
+        ImGui::PopID();
+    }
+    ImGui::Separator();
     ImGui::TextDisabled("СОБЫТИЯ: %d", (int) cut().events.size());
     ImGui::End();
 }
@@ -1073,6 +1223,23 @@ void projectPanel() {
 // the properties of what is chosen (the effect controls of the editor)
 void propsPanel() {
     ImGui::Begin("Свойства");
+    if (gSelLayer >= 0 && gSelLayer < (int) cut().layers.size() && ImGui::CollapsingHeader("Слой", ImGuiTreeNodeFlags_DefaultOpen)) {
+        Layer& y = cut().layers[gSelLayer];
+        ImGui::Text("%s", y.name.c_str());
+        ImGui::Checkbox("Виден", &y.visible);
+        ImGui::SliderFloat("Сдвиг по X", &y.dx, -1.0f, 1.0f, "%.3f");
+        ImGui::SliderFloat("Сдвиг по Y", &y.dy, -1.0f, 1.0f, "%.3f");
+        ImGui::SliderFloat("Размер", &y.scale, 0.1f, 4.0f, "%.2f");
+        ImGui::SliderFloat("Наклон", &y.rot, -180.0f, 180.0f, "%.1f°");
+        ImGui::SliderFloat("Прозрачность", &y.alpha, 0.0f, 1.0f, "%.2f");
+        if (ImGui::Button("Сбросить слой")) {
+            y.dx = y.dy = 0;
+            y.scale = 1;
+            y.rot = 0;
+            y.alpha = 1;
+            y.visible = true;
+        }
+    }
     if (ImGui::CollapsingHeader("Кадр", ImGuiTreeNodeFlags_DefaultOpen)) shotInspector();
     if (ImGui::CollapsingHeader("Событие", ImGuiTreeNodeFlags_DefaultOpen)) eventInspector();
     ImGui::End();
@@ -1251,10 +1418,16 @@ int main(int argc, char** argv) {
 
         if (!io.WantTextInput) {
             if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) gPlaying ? pause() : play();
-            if (ImGui::IsKeyPressed(ImGuiKey_Delete) && gSelEv >= 0 && gSelEv < (int) cut().events.size()) {
-                cut().events.erase(cut().events.begin() + gSelEv);
-                gSelEv = -1;
+            if (ImGui::IsKeyPressed(ImGuiKey_Delete)) {
+                if (gSelEv >= 0 && gSelEv < (int) cut().events.size()) {
+                    cut().events.erase(cut().events.begin() + gSelEv);
+                    gSelEv = -1;
+                } else if (gSelLayer >= 0 && gSelLayer < (int) cut().layers.size()) {
+                    cut().layers[gSelLayer].visible = false;
+                }
             }
+            if (!io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false)) gTool = 0;
+            if (!io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false)) gTool = 1;
             if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S)) saveProject();
             if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z)) undo(io.KeyShift ? +1 : -1);
             if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y)) undo(+1);
