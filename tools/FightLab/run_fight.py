@@ -20,13 +20,17 @@ def main():
     start = sys.argv[2] if len(sys.argv) > 2 else "0"
     out = lab.OUT / "classes-cli"
     out.mkdir(parents=True, exist_ok=True)
-    files = [str(lab.OVERLAY / f"{r}.java") for r in lab.ROOTS if (lab.OVERLAY / f"{r}.java").exists()]
+    files = [str(lab.OVERLAY / f"{r}.java") for r in lab.ROOTS + ["PreviewMain"] if (lab.OVERLAY / f"{r}.java").exists()]
     cmd = [lab.JAVAC, "-encoding", "UTF-8", "-nowarn", "-cp", ";".join([str(out), str(lab.RES)] + lab.JARS),
            "-sourcepath", str(lab.SRC), "-d", str(out)] + files
     r = subprocess.run(cmd, cwd=str(lab.ROOT), capture_output=True, creationflags=lab.NO_WINDOW)
     if r.returncode != 0:
         (lab.OUT / "last_run.log").write_bytes(r.stdout + r.stderr)
         return 1
+    cp = ";".join([str(out), str(lab.RES)] + lab.JARS)
+    if kind == "build":                                  # for the editor's preview: only the classpath of the fresh build is wanted
+        (lab.OUT / "preview.cp").write_text(cp, encoding="utf-8")
+        return 0
     tracks = lab.TRACKS
     args = ["--song1", str(tracks / "song1.wav"), "--song2", str(tracks / "song2.wav"), "--song3", str(tracks / "song3.wav"),
             "--interlude", str(tracks / "interlude.wav"), "--contact", str(tracks / "contact.wav")]

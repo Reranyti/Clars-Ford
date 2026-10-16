@@ -12,8 +12,12 @@
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+#include "stb_image.h"
 #include <cstring>
 #include <windows.h>
+#include <atomic>
+#include <mutex>
+#include <thread>
 
 #include <algorithm>
 #include <cmath>
@@ -96,8 +100,8 @@ void defaultShots(Cut& c) {
     c.shots.push_back({"Рука", 38, 56, {{-16, 19, 24}, {-6, 19, 0}, 36, 4}, "Рука у стекла", false});
 }
 
-void saveProject() {
-    std::ofstream f(kProject, std::ios::binary);
+std::string projectText() {
+    std::ostringstream f;
     f << "LOTOS-EDITOR 1\n";
     for (const Cut& c : gCuts) {
         f << "CUT\t" << esc(c.name) << '\t' << c.song << '\n';
@@ -106,6 +110,19 @@ void saveProject() {
               << s.cam.target.x << ' ' << s.cam.target.y << ' ' << s.cam.target.z << '\t' << s.cam.fov << '\t' << s.cam.roll << '\t' << esc(s.note) << '\t' << (s.move ? 1 : 0) << '\n';
         for (const Ev& e : c.events) f << "E\t" << e.track << '\t' << e.t0 << '\t' << e.t1 << '\t' << esc(e.label) << '\t' << e.value << '\n';
     }
+    return f.str();
+}
+
+std::string gLastSaved;
+
+void writeProject(const std::string& text) {
+    std::ofstream f(kProject, std::ios::binary);
+    f << text;
+    gLastSaved = text;
+}
+
+void saveProject() {
+    writeProject(projectText());
     gStatus = "Сохранено";
 }
 
@@ -261,6 +278,165 @@ void switchCut(int i) {
     gHead = 0;
     loadSong();
 }
+
+
+// ---- the game's own picture: a Java process (PreviewMain) draws the visuals of the song at the asked moment, the editor shows it
+struct Preview {
+    HANDLE proc = nullptr, toJava = nullptr, fromJava = nullptr;
+    std::thread worker, reader;
+    std::atomic<bool> ready{false}, busy{false}, failed{false};
+    std::string state = "Запускаю игровое превью…";
+    std::mutex lock;
+    std::vector<unsigned char> png;       // the newest picture that has come, not yet shown
+    bool fresh = false;
+    GLuint tex = 0;
+    int texW = 0, texH = 0;
+    double askedT = -1;
+    int askedW = 0, askedH = 0;
+    double lastAsk = 0;
+
+    static bool readAll(HANDLE h, void* buf, DWORD n) {
+        char* b = (char*) buf;
+        while (n > 0) {
+            DWORD got = 0;
+            if (!ReadFile(h, b, n, &got, nullptr) || got == 0) return false;
+            b += got;
+            n -= got;
+        }
+        return true;
+    }
+
+    void start() {
+        worker = std::thread([this] {
+            // 1. compile what changed, get the classpath
+            std::string py = "pythonw \"" + kRoot + "/../FightLab/run_fight.py\" build";
+            STARTUPINFOA si = {};
+            si.cb = sizeof si;
+            PROCESS_INFORMATION pi = {};
+            std::vector<char> c1(py.begin(), py.end());
+            c1.push_back(0);
+            state = "Собираю игру (первый раз дольше)…";
+            if (!CreateProcessA(nullptr, c1.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+                state = "Не запустился pythonw";
+                failed = true;
+                return;
+            }
+            WaitForSingleObject(pi.hProcess, 300000);
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+            std::ifstream cpf("D:/The LOTOS/build/fight-lab/preview.cp");
+            std::string cp;
+            std::getline(cpf, cp);
+            if (cp.empty()) {
+                state = "Сборка не удалась: см. build/fight-lab/last_run.log";
+                failed = true;
+                return;
+            }
+            // 2. the Java process with two pipes
+            SECURITY_ATTRIBUTES sa = {sizeof sa, nullptr, TRUE};
+            HANDLE inR, inW, outR, outW;
+            CreatePipe(&inR, &inW, &sa, 0);
+            CreatePipe(&outR, &outW, &sa, 1 << 20);
+            SetHandleInformation(inW, HANDLE_FLAG_INHERIT, 0);
+            SetHandleInformation(outR, HANDLE_FLAG_INHERIT, 0);
+            STARTUPINFOA s2 = {};
+            s2.cb = sizeof s2;
+            s2.dwFlags = STARTF_USESTDHANDLES;
+            s2.hStdInput = inR;
+            s2.hStdOutput = outW;
+            HANDLE log = CreateFileA("D:/The LOTOS/build/fight-lab/preview.log", GENERIC_WRITE, FILE_SHARE_READ, &sa, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+            s2.hStdError = log;
+            std::string cmd = "D:/gradle-home/jdks/eclipse_adoptium-17-amd64-windows/jdk-17.0.20.1+1/bin/java.exe -Xmx900m -Djava.awt.headless=true -Dlotos.scenes=\"" +
+                              kProject + "\" -cp \"" + cp + "\" com.lotusblight.overlay.PreviewMain";
+            std::vector<char> c2(cmd.begin(), cmd.end());
+            c2.push_back(0);
+            PROCESS_INFORMATION p2 = {};
+            if (!CreateProcessA(nullptr, c2.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &s2, &p2)) {
+                state = "Не запустилась Java";
+                failed = true;
+                return;
+            }
+            CloseHandle(p2.hThread);
+            CloseHandle(inR);
+            CloseHandle(outW);
+            proc = p2.hProcess;
+            toJava = inW;
+            fromJava = outR;
+            ready = true;
+            state = "Превью из игры";
+            // 3. the pictures come one by one
+            reader = std::thread([this] {
+                for (;;) {
+                    unsigned char hdr[4];
+                    if (!readAll(fromJava, hdr, 4)) break;
+                    DWORD n = (hdr[0] << 24) | (hdr[1] << 16) | (hdr[2] << 8) | hdr[3];
+                    if (n == 0 || n > (64u << 20)) break;
+                    std::vector<unsigned char> b(n);
+                    if (!readAll(fromJava, b.data(), n)) break;
+                    {
+                        std::lock_guard<std::mutex> g(lock);
+                        png.swap(b);
+                        fresh = true;
+                    }
+                    busy = false;
+                }
+                state = "Превью остановилось (см. build/fight-lab/preview.log)";
+                ready = false;
+                failed = true;
+            });
+        });
+    }
+
+    // asks for the picture at a moment, if the last one has arrived
+    void ask(double t, int w, int h, bool force) {
+        if (!ready || busy) return;
+        if (!force && t == askedT && w == askedW && h == askedH) return;
+        char line[96];
+        int n = std::snprintf(line, sizeof line, "R %.1f %d %d\n", t * 1000.0, w, h);
+        DWORD wrote = 0;
+        busy = true;
+        if (!WriteFile(toJava, line, n, &wrote, nullptr)) {
+            ready = false;
+            failed = true;
+            busy = false;
+        }
+        askedT = t;
+        askedW = w;
+        askedH = h;
+    }
+
+    // puts the newest picture into the texture
+    void upload() {
+        std::vector<unsigned char> b;
+        {
+            std::lock_guard<std::mutex> g(lock);
+            if (!fresh) return;
+            b.swap(png);
+            fresh = false;
+        }
+        int w, h, ch;
+        unsigned char* px = stbi_load_from_memory(b.data(), (int) b.size(), &w, &h, &ch, 4);
+        if (!px) return;
+        if (!tex) glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        stbi_image_free(px);
+        texW = w;
+        texH = h;
+    }
+
+    void stop() {
+        if (proc) TerminateProcess(proc, 0);
+        if (worker.joinable()) worker.join();
+        if (reader.joinable()) reader.detach();
+    }
+};
+Preview gPreview;
+bool gGameView = true;          // the game's own picture, or the 3D view of the editor
+bool gForceAsk = true;
+double gLastEdit = 0;
 
 // ---- the viewport: an orbit camera of its own, or the camera of the shot
 struct Orbit {
@@ -619,9 +795,10 @@ void topBar() {
 }  // namespace
 
 int main(int argc, char** argv) {
-    bool selftest = argc > 2 && std::strcmp(argv[1], "--selftest") == 0;      // draws the shots to picture files and quits (for checking)
+    bool selftest = argc > 2 && std::strcmp(argv[1], "--selftest") == 0;
+    bool previewtest = argc > 2 && std::strcmp(argv[1], "--previewtest") == 0;      // starts the game picture, asks one frame, writes it, quits      // draws the shots to picture files and quits (for checking)
     if (!glfwInit()) return 1;
-    if (selftest) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    if (selftest || previewtest) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -655,7 +832,27 @@ int main(int argc, char** argv) {
     bool sceneOk = glOk && gScene.init(kRoot + "/data", sceneError);
     if (!glOk) sceneError = "Видеодрайвер не даёт OpenGL 3.3";
     loadProject();
+    gLastSaved = projectText();
     loadSong();
+    if (!selftest) gPreview.start();
+    if (previewtest) {
+        for (int i = 0; i < 1200 && !gPreview.ready && !gPreview.failed; i++) Sleep(100);
+        std::printf("state: %s\n", gPreview.state.c_str());
+        if (!gPreview.ready) return 3;
+        gPreview.ask(45.0, 960, 540, true);
+        for (int i = 0; i < 300; i++) {
+            Sleep(100);
+            std::lock_guard<std::mutex> g(gPreview.lock);
+            if (gPreview.fresh) {
+                std::ofstream o(argv[2], std::ios::binary);
+                o.write((const char*) gPreview.png.data(), (std::streamsize) gPreview.png.size());
+                std::printf("frame written: %zu bytes\n", gPreview.png.size());
+                break;
+            }
+        }
+        gPreview.stop();
+        return 0;
+    }
     if (!sceneOk) gStatus = sceneError;
     if (selftest) {
         if (!sceneOk) {
@@ -694,6 +891,16 @@ int main(int argc, char** argv) {
             if (ImGui::IsKeyPressed(ImGuiKey_F)) gFree = !gFree;
         }
         if (gPlaying && gSoundOk) gHead = soundPos();
+        // whatever is changed is written at once, so the game's picture (which reads the file) follows
+        if (ImGui::GetTime() - gLastEdit > 0.25) {
+            std::string now = projectText();
+            if (now != gLastSaved) {
+                writeProject(now);
+                gForceAsk = true;
+            }
+            gLastEdit = ImGui::GetTime();
+        }
+        if (gPlaying) gForceAsk = true;
 
         ImGuiViewport* vp = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(vp->WorkPos);
@@ -711,24 +918,35 @@ int main(int argc, char** argv) {
             ImVec2 a = ImGui::GetContentRegionAvail();
             std::vector<Shot>& shots = cut().shots;
             int idx = gMode == 0 ? std::min(gSelShot, (int) shots.size() - 1) : activeShot(gHead);
-            if (sceneOk) {
-                ImGui::Checkbox("Свободный вид (F)", &gFree);
+            {
+                ImGui::Checkbox("Вид из игры", &gGameView);
                 ImGui::SameLine();
-                ImGui::Checkbox("Сетка", &gLook.grid);
-                ImGui::SameLine();
-                bool post = gLook.posterize > 0;
-                if (ImGui::Checkbox("Постеризация", &post)) gLook.posterize = post ? 6.0f : 0.0f;
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(140);
-                ImGui::SliderFloat("Контур", &gLook.rim, 0, 2);
-                ImGui::SameLine();
-                ImGui::TextDisabled("  ПКМ — вращать, колесо — приближать, СКМ — двигать");
-                a = ImGui::GetContentRegionAvail();
-                float w = std::min(a.x, a.y * 16.0f / 9.0f), h = w * 9.0f / 16.0f;
-                ImGui::SetCursorPosX((a.x - w) / 2 + ImGui::GetCursorPosX());
-                viewport("view", ImVec2(w, h), shots[idx].cam);
-            } else {
-                ImGui::TextWrapped("3D не запустился: %s", sceneError.c_str());
+                ImGui::TextDisabled("%s", gPreview.state.c_str());
+                if (gGameView && gPreview.ready) {
+                    a = ImGui::GetContentRegionAvail();
+                    float w = std::min(a.x, a.y * 16.0f / 9.0f), h = w * 9.0f / 16.0f;
+                    gPreview.upload();
+                    // the picture is asked for the moment of the play head (the game's own camera from the shots), again and again while it plays
+                    gPreview.ask(gHead, 960, 540, gForceAsk);
+                    gForceAsk = false;
+                    ImGui::SetCursorPosX((a.x - w) / 2 + ImGui::GetCursorPosX());
+                    if (gPreview.tex) ImGui::Image((ImTextureID) (intptr_t) gPreview.tex, ImVec2(w, h));
+                } else if (sceneOk) {
+                    ImGui::SameLine();
+                    ImGui::Checkbox("Свободный вид (F)", &gFree);
+                    ImGui::SameLine();
+                    ImGui::Checkbox("Сетка", &gLook.grid);
+                    ImGui::SameLine();
+                    bool post = gLook.posterize > 0;
+                    if (ImGui::Checkbox("Постеризация", &post)) gLook.posterize = post ? 6.0f : 0.0f;
+                    ImGui::SameLine();
+                    ImGui::SetNextItemWidth(140);
+                    ImGui::SliderFloat("Контур", &gLook.rim, 0, 2);
+                    a = ImGui::GetContentRegionAvail();
+                    float w = std::min(a.x, a.y * 16.0f / 9.0f), h = w * 9.0f / 16.0f;
+                    ImGui::SetCursorPosX((a.x - w) / 2 + ImGui::GetCursorPosX());
+                    viewport("view", ImVec2(w, h), shots[idx].cam);
+                }
             }
         }
         ImGui::EndChild();
@@ -759,6 +977,7 @@ int main(int argc, char** argv) {
         glfwSwapBuffers(win);
     }
     saveProject();
+    gPreview.stop();
     unloadSong();
     if (gEngineOk) ma_engine_uninit(&gEngine);
     ImGui_ImplOpenGL3_Shutdown();
