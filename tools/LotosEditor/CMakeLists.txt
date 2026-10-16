@@ -12,7 +12,8 @@ set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(imgui GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.91.9 GIT_SHALLOW TRUE)
 FetchContent_Declare(miniaudio GIT_REPOSITORY https://github.com/mackron/miniaudio.git GIT_TAG 0.11.22 GIT_SHALLOW TRUE)
-FetchContent_MakeAvailable(glfw imgui miniaudio)
+FetchContent_Declare(stb GIT_REPOSITORY https://github.com/nothings/stb.git GIT_TAG master GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(glfw imgui miniaudio stb)
 
 add_library(imgui STATIC
     ${imgui_SOURCE_DIR}/imgui.cpp ${imgui_SOURCE_DIR}/imgui_draw.cpp ${imgui_SOURCE_DIR}/imgui_tables.cpp ${imgui_SOURCE_DIR}/imgui_widgets.cpp
@@ -20,7 +21,7 @@ add_library(imgui STATIC
 target_include_directories(imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
 target_link_libraries(imgui PUBLIC glfw opengl32)
 
-add_executable(LotosEditor WIN32 src/main.cpp)
-target_include_directories(LotosEditor PRIVATE ${miniaudio_SOURCE_DIR})
+add_executable(LotosEditor WIN32 src/main.cpp src/scene.cpp)
+target_include_directories(LotosEditor PRIVATE ${miniaudio_SOURCE_DIR} ${stb_SOURCE_DIR})
 target_link_libraries(LotosEditor PRIVATE imgui)
 target_link_options(LotosEditor PRIVATE -static -static-libgcc -static-libstdc++)
