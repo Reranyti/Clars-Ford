@@ -102,7 +102,7 @@ void saveProject() {
         f << "CUT\t" << esc(c.name) << '\t' << c.song << '\n';
         for (const Shot& s : c.shots)
             f << "S\t" << esc(s.name) << '\t' << s.t0 << '\t' << s.t1 << '\t' << s.cam.pos.x << ' ' << s.cam.pos.y << ' ' << s.cam.pos.z << '\t'
-              << s.cam.target.x << ' ' << s.cam.target.y << ' ' << s.cam.target.z << '\t' << s.cam.fov << '\t' << s.cam.roll << '\t' << esc(s.note) << '\n';
+              << s.cam.target.x << ' ' << s.cam.target.y << ' ' << s.cam.target.z << '\t' << s.cam.fov << '\t' << s.cam.roll << '\t' << esc(s.note) << '\t' << (s.move ? 1 : 0) << '\n';
         for (const Ev& e : c.events) f << "E\t" << e.track << '\t' << e.t0 << '\t' << e.t1 << '\t' << esc(e.label) << '\t' << e.value << '\n';
     }
     gStatus = "Сохранено";
