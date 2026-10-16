@@ -55,6 +55,7 @@ struct Layer {
 };
 struct Cut {
     std::string name = "Новая сцена";
+    std::string program = "song2";       // which scene program of the game draws it (the game lists them, see ScenePrograms)
     std::vector<Layer> layers;
     std::string song = "D:/The LOTOS/build/song-test/song2.wav";
     std::vector<Shot> shots;
@@ -79,9 +80,30 @@ int gMode = 0;                              // 0 storyboard, 1 events and animat
 
 Cut& cut() { return gCuts[gCut]; }
 
-// every visible part of the song's picture, bottom to top (the same names the game draws them under)
+// what the game says its scene programs are made of: {id, title, layers {id, name}}
+struct Program {
+    std::string id, title;
+    std::vector<std::pair<std::string, std::string>> layers;
+};
+std::vector<Program> gPrograms;
+
+// the layers of a cut are the ones its scene program lists; the ones already set up stay as they are, the new ones are added on top
 void ensureLayers(Cut& c) {
-    if (!c.layers.empty()) return;
+    for (const Program& pr : gPrograms) {
+        if (pr.id != c.program) continue;
+        for (auto& l : pr.layers) {
+            bool have = false;
+            for (const Layer& y : c.layers) have = have || y.id == l.first;
+            if (!have) {
+                Layer y;
+                y.id = l.first;
+                y.name = l.second;
+                c.layers.push_back(y);
+            }
+        }
+        return;
+    }
+    if (!c.layers.empty() || c.program != "song2") return;     // before the game has answered: the old default for the second song
     const char* list[][2] = {{"backdrop", "Фон"}, {"columns", "Колонки"}, {"glitcher", "Глитчер"}, {"eye", "Глаз"},
                              {"windows", "Окна (след)"}, {"windows2", "Окна Глитчера"}, {"snakes", "Змеи и телевизор"}, {"phrases", "Чёрные экраны с фразами"}};
     for (auto& l : list) {
@@ -165,7 +187,7 @@ std::string projectText() {
     std::ostringstream f;
     f << "LOTOS-EDITOR 1\n";
     for (const Cut& c : gCuts) {
-        f << "CUT\t" << esc(c.name) << '\t' << c.song << '\n';
+        f << "CUT\t" << esc(c.name) << '\t' << c.song << '\t' << c.program << '\n';
         for (const Shot& s : c.shots)
             f << "S\t" << esc(s.name) << '\t' << s.t0 << '\t' << s.t1 << '\t' << s.cam.pos.x << ' ' << s.cam.pos.y << ' ' << s.cam.pos.z << '\t'
               << s.cam.target.x << ' ' << s.cam.target.y << ' ' << s.cam.target.z << '\t' << s.cam.fov << '\t' << s.cam.roll << '\t' << esc(s.note) << '\t' << (s.move ? 1 : 0) << '\n';
@@ -231,6 +253,7 @@ void parseProject(std::istream& f) {
                 gCuts.emplace_back();
                 gCuts.back().name = unesc(p[1]);
                 gCuts.back().song = p[2];
+                gCuts.back().program = p.size() > 3 && !p[3].empty() ? p[3] : "song2";
                 ensureLayers(gCuts.back());
             } else if (p[0] == "S" && p.size() >= 9 && !gCuts.empty()) {
                 Shot s;
@@ -400,7 +423,8 @@ struct Preview {
     bool fresh = false;
     GLuint tex = 0;
     int texW = 0, texH = 0;
-    std::string pickAnswer, boxAnswer;
+    std::string pickAnswer, boxAnswer, programsAnswer, program = "song2";
+    bool programsReady = false, programsWanted = true;
     bool pickReady = false, boxReady = false;
     bool pickWanted = false, boxWanted = false;
     int pickX = 0, pickY = 0;
@@ -494,6 +518,9 @@ struct Preview {
                             rawH = (b[5] << 24) | (b[6] << 16) | (b[7] << 8) | b[8];
                             png.assign(b.begin() + 9, b.end());
                             fresh = true;
+                        } else if (b[0] == 4) {                                     // the list of the scene programs
+                            programsAnswer.assign((const char*) b.data() + 1, b.size() - 1);
+                            programsReady = true;
                         } else if (b[0] == 1) {                                     // the layer under the point
                             pickAnswer.assign((const char*) b.data() + 1, b.size() - 1);
                             pickReady = true;
@@ -529,6 +556,11 @@ struct Preview {
     void ask(double t, int w, int h, bool force) {
         if (!ready || busy) return;
         char line[160];
+        if (programsWanted) {
+            programsWanted = false;
+            send("S\n", 2);
+            return;
+        }
         if (pickWanted) {
             pickWanted = false;
             send(line, std::snprintf(line, sizeof line, "P %d %d\n", pickX, pickY));
@@ -540,7 +572,7 @@ struct Preview {
             return;
         }
         if (!force && t == askedT && w == askedW && h == askedH) return;
-        int n = std::snprintf(line, sizeof line, "R %.1f %d %d %d\n", t * 1000.0, w, h, keepLayers ? 1 : 0);
+        int n = std::snprintf(line, sizeof line, "R %.1f %d %d %d %s\n", t * 1000.0, w, h, keepLayers ? 1 : 0, program.c_str());
         DWORD wrote = 0;
         busy = true;
         if (!WriteFile(toJava, line, n, &wrote, nullptr)) {
@@ -1148,6 +1180,37 @@ void monitorBody() {
             wasDown = down;
             int qw = (gPlaying || down) ? 960 : (w >= 1000 ? 1920 : 1280), qh = qw * 9 / 16;
             gPreview.keepLayers = !gPlaying;
+            gPreview.program = cut().program;
+            {
+                std::string list;
+                {
+                    std::lock_guard<std::mutex> lk(gPreview.lock);
+                    if (gPreview.programsReady) {
+                        list = gPreview.programsAnswer;
+                        gPreview.programsReady = false;
+                    }
+                }
+                if (!list.empty()) {
+                    gPrograms.clear();
+                    std::istringstream in(list);
+                    std::string row;
+                    while (std::getline(in, row)) {
+                        std::vector<std::string> f = split(row);
+                        if (f.size() < 3) continue;
+                        Program pr;
+                        pr.id = f[0];
+                        pr.title = f[1];
+                        std::istringstream ls(f[2]);
+                        std::string item;
+                        while (std::getline(ls, item, ';')) {
+                            size_t eq = item.find('=');
+                            if (eq != std::string::npos) pr.layers.push_back({item.substr(0, eq), item.substr(eq + 1)});
+                        }
+                        gPrograms.push_back(pr);
+                    }
+                    for (Cut& c : gCuts) ensureLayers(c);
+                }
+            }
             gPreview.ask(gHead, qw, qh, gForceAsk);
             gForceAsk = false;
             std::string pr;
@@ -1246,11 +1309,20 @@ void projectPanel() {
     ImGui::TextDisabled("СЦЕНЫ");
     for (int i = 0; i < (int) gCuts.size(); i++)
         if (ImGui::Selectable(gCuts[i].name.c_str(), i == gCut)) switchCut(i);
-    if (ImGui::Button("+ сцена", ImVec2(-1, 0))) {
-        gCuts.emplace_back();
-        defaultShots(gCuts.back());
-        gCuts.back().name = "Сцена " + std::to_string(gCuts.size());
-        switchCut((int) gCuts.size() - 1);
+    if (ImGui::Button("+ сцена", ImVec2(-1, 0))) ImGui::OpenPopup("newcut");
+    if (ImGui::BeginPopup("newcut")) {
+        ImGui::TextDisabled("Что рисует сцена:");
+        for (const Program& pr : gPrograms) {
+            if (!ImGui::MenuItem(pr.title.c_str())) continue;
+            gCuts.emplace_back();
+            gCuts.back().program = pr.id;
+            defaultShots(gCuts.back());
+            gCuts.back().name = pr.title + " " + std::to_string(gCuts.size());
+            ensureLayers(gCuts.back());
+            switchCut((int) gCuts.size() - 1);
+        }
+        if (gPrograms.empty()) ImGui::TextDisabled("(игра ещё не ответила)");
+        ImGui::EndPopup();
     }
     ImGui::Separator();
     ImGui::TextDisabled("КАДРЫ");

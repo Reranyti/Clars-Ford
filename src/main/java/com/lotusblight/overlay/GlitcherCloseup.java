@@ -457,7 +457,7 @@ final class GlitcherCloseup {
 
     /** The camera of this scene as it stands in the editor's project ({x, y, z, target x, y, z, fov, roll}), or null to keep the old fixed view. */
     private double[] sceneCamera(double ms) {
-        SceneData.Cut cut = SceneData.current().cut(CUT_NAME);
+        SceneData.Cut cut = Layers.cut();
         return cut == null ? null : cut.cameraAt(ms);
     }
 

@@ -28,13 +28,18 @@ final class Layers {
     /** A drawn layer kept for picking: its picture and where it was put on the screen. */
     record Kept(String id, BufferedImage img, AffineTransform at) {}
 
-    static final String CUT = "Песня 2";
+    /** The scene program being drawn now (the editor sets it for each picture; the fight is the second song). */
+    static String program = "song2";
+
+    static SceneData.Cut cut() {
+        return SceneData.current().forProgram(program);
+    }
 
     /** Set by the editor's preview only: when present every layer is drawn into a picture of its own first. */
     static List<Kept> keep;
 
     static Xf of(String id) {
-        SceneData.Cut c = SceneData.current().cut(CUT);
+        SceneData.Cut c = cut();
         Xf x = c == null ? null : c.objects.get(id);
         return x == null ? Xf.PLAIN : x;
     }

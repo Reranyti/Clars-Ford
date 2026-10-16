@@ -29,14 +29,17 @@ final class SceneData {
     static final class Cut {
         final String name;
         final String song;
+        /** The scene program the cut belongs to (see {@link SceneProgram}); the picture it is drawn by. */
+        final String program;
         final List<Shot> shots = new ArrayList<>();
         final List<Event> events = new ArrayList<>();
         /** What the scene says about each layer, by name ({@code O} records). */
         final Map<String, Layers.Xf> objects = new LinkedHashMap<>();
 
-        Cut(String name, String song) {
+        Cut(String name, String song, String program) {
             this.name = name;
             this.song = song;
+            this.program = program;
         }
 
         /** The shot whose camera is on at the time: the latest one that has begun. */
@@ -86,6 +89,12 @@ final class SceneData {
         return cuts.get(name);
     }
 
+    /** The first cut made for a scene program, or null. */
+    Cut forProgram(String program) {
+        for (Cut c : cuts.values()) if (c.program.equals(program)) return c;
+        return null;
+    }
+
     Iterable<Cut> all() {
         return cuts.values();
     }
@@ -108,7 +117,7 @@ final class SceneData {
             try {
                 switch (p[0]) {
                     case "CUT" -> {
-                        cur = new Cut(unesc(p[1]), p[2]);
+                        cur = new Cut(unesc(p[1]), p[2], p.length > 3 && !p[3].isEmpty() ? p[3] : "song2");
                         d.cuts.put(cur.name, cur);
                     }
                     case "S" -> {

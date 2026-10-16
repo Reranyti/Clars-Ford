@@ -25,7 +25,7 @@ final class SceneFx {
     private static final String FLASH = "Вспышка";
 
     private static List<SceneData.Event> active(int track, double ms) {
-        SceneData.Cut c = SceneData.current().cut(Layers.CUT);
+        SceneData.Cut c = Layers.cut();
         return c == null ? List.of() : c.active(track, ms);
     }
 
