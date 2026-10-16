@@ -1430,7 +1430,7 @@ void cameraByMouse(ImVec2 pos, ImVec2 size) {
         }
         if (gSelLayer >= 0 && gSelLayer < (int) cut().layers.size()) {
             Layer& y = cut().layers[gSelLayer];
-            if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0, 2)) {
+            if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0, 8)) {
                 y.dx += io.MouseDelta.x / size.x;
                 y.dy += io.MouseDelta.y / size.y;
             }
@@ -1745,6 +1745,7 @@ void projectPanel() {
 void propsPanel() {
     ImGui::Begin("Свойства");
     if (gSelLayer >= 0 && gSelLayer < (int) cut().layers.size() && ImGui::CollapsingHeader("Слой", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::PushID("layer-props");
         Layer& y = cut().layers[gSelLayer];
         ImGui::Text("%s", y.name.c_str());
         ImGui::Checkbox("Виден", &y.visible);
@@ -1760,9 +1761,18 @@ void propsPanel() {
             y.alpha = 1;
             y.visible = true;
         }
+        ImGui::PopID();
     }
-    if (ImGui::CollapsingHeader("Кадр", ImGuiTreeNodeFlags_DefaultOpen)) shotInspector();
-    if (ImGui::CollapsingHeader("Событие", ImGuiTreeNodeFlags_DefaultOpen)) eventInspector();
+    if (ImGui::CollapsingHeader("Кадр", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::PushID("shot-props");
+        shotInspector();
+        ImGui::PopID();
+    }
+    if (ImGui::CollapsingHeader("Событие", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::PushID("event-props");
+        eventInspector();
+        ImGui::PopID();
+    }
     ImGui::End();
 }
 
@@ -1869,7 +1879,7 @@ int main(int argc, char** argv) {
     GLFWwindow* win = glfwCreateWindow(1600, 900, "Lotos Editor", nullptr, nullptr);
     if (!win) return 1;
     glfwMakeContextCurrent(win);
-    glfwSwapInterval(1);
+    glfwSwapInterval(uishot ? 0 : 1);
     bool glOk = loadGL();
 
     IMGUI_CHECKVERSION();
@@ -2016,6 +2026,10 @@ int main(int argc, char** argv) {
             gPxPerSec = 40;
         }
         if (uishot && argc > 3 && ImGui::GetFrameCount() == 40) ImGui::SetWindowFocus("Таймлайн");
+        if (uishot && argc > 4 && ImGui::GetFrameCount() == 450) {                  // "play": the picture is asked for again and again, as in work
+            seek(40.0);
+            play();
+        }
         menuBar();
         ImGuiViewport* vp = ImGui::GetMainViewport();
         ImGuiID dock = ImGui::GetID("LotosDock");
@@ -2035,6 +2049,10 @@ int main(int argc, char** argv) {
         storyboardPanel();
 
         static int frameNo = 0;
+        static double tStart = 0;
+        static int lastGoodFrame = 100000;
+        if (gPreview.tex != 0 && lastGoodFrame == 100000) lastGoodFrame = frameNo;
+        if (frameNo == 300) tStart = glfwGetTime();
         ImGui::Render();
         int w, h;
         glfwGetFramebufferSize(win, &w, &h);
@@ -2047,10 +2065,11 @@ int main(int argc, char** argv) {
         for (const Cut& c : gCuts) allImported = allImported && c.imported;
         static int settled = 0;
         if (allImported && gPreview.fresh == false) settled++;
-        if (uishot && ++frameNo >= 90 && ((allImported && settled > 25) || frameNo >= 2400)) {
+        if (uishot && ++frameNo >= 700 && ((allImported && settled > 25 && gPreview.ready && gPreview.tex != 0 && frameNo > lastGoodFrame + 40) || frameNo >= 4000)) {
             std::vector<unsigned char> px((size_t) w * h * 4);
             glReadBuffer(GL_BACK);
             glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+            std::printf("frame time %.2f ms (%d frames)\n", (glfwGetTime() - tStart) * 1000.0 / std::max(1, frameNo - 300), frameNo - 300);
             std::printf("programs %zu, cuts %zu, imported %d, events %zu, frames %d, preview: %s\n", gPrograms.size(), gCuts.size(), (int) gCuts[0].imported, gCuts[0].events.size(), frameNo, gPreview.state.c_str());
             stbi_flip_vertically_on_write(1);
             stbi_write_png(argv[2], w, h, 4, px.data(), w * 4);
