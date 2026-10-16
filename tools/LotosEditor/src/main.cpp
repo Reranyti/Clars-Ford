@@ -6,6 +6,7 @@
 
 #include "gl.h"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "scene.h"
@@ -70,6 +71,44 @@ std::string gStatus = "Готов";
 int gMode = 0;                              // 0 storyboard, 1 events and animation
 
 Cut& cut() { return gCuts[gCut]; }
+
+std::vector<double> gBeats;       // seconds
+bool gSnap = true;
+
+void loadBeats(const std::string& osu) {
+    std::ifstream f(osu);
+    std::string line;
+    bool in = false;
+    while (std::getline(f, line)) {
+        if (line.rfind("[HitObjects]", 0) == 0) {
+            in = true;
+            continue;
+        }
+        if (!in) continue;
+        int commas = 0;
+        size_t a = 0, b = 0;
+        for (size_t i = 0; i < line.size(); i++) {
+            if (line[i] == ',') {
+                if (++commas == 2) a = i + 1;
+                if (commas == 3) {
+                    b = i;
+                    break;
+                }
+            }
+        }
+        if (b > a) gBeats.push_back(std::atof(line.substr(a, b - a).c_str()) / 1000.0);
+    }
+    std::sort(gBeats.begin(), gBeats.end());
+}
+
+double snapT(double t, double pxPerSec) {
+    if (!gSnap || gBeats.empty()) return t;
+    auto it = std::lower_bound(gBeats.begin(), gBeats.end(), t);
+    double best = t, bd = 1e9;
+    if (it != gBeats.end() && std::fabs(*it - t) < bd) { best = *it; bd = std::fabs(*it - t); }
+    if (it != gBeats.begin() && std::fabs(*(it - 1) - t) < bd) { best = *(it - 1); bd = std::fabs(*(it - 1) - t); }
+    return bd * pxPerSec < 9 ? best : t;
+}
 
 std::string esc(std::string s) {
     for (char& c : s)
@@ -158,9 +197,8 @@ std::vector<std::string> split(const std::string& line) {
     return out;
 }
 
-void loadProject() {
+void parseProject(std::istream& f) {
     gCuts.clear();
-    std::ifstream f(kProject, std::ios::binary);
     std::string line;
     while (f && std::getline(f, line)) {
         std::vector<std::string> p = split(line);
@@ -200,9 +238,42 @@ void loadProject() {
     }
     for (Cut& c : gCuts)
         if (c.shots.empty()) defaultShots(c);
+}
+
+void loadProject() {
+    std::ifstream f(kProject, std::ios::binary);
+    parseProject(f);
     gCut = 0;
     gSelShot = 0;
     gSelEv = -1;
+}
+
+// the undo history: the whole project text after every finished change
+std::vector<std::string> gHist;
+int gHistAt = -1;
+
+void restoreText(const std::string& text) {
+    std::istringstream in(text);
+    parseProject(in);
+    gCut = std::max(0, std::min(gCut, (int) gCuts.size() - 1));
+    gSelShot = std::max(0, std::min(gSelShot, (int) cut().shots.size() - 1));
+    if (gSelEv >= (int) cut().events.size()) gSelEv = -1;
+}
+
+void undo(int dir) {
+    int n = gHistAt + dir;
+    if (n < 0 || n >= (int) gHist.size()) return;
+    gHistAt = n;
+    restoreText(gHist[n]);
+}
+
+void trackHistory() {
+    std::string cur = projectText();
+    if (gHistAt >= 0 && gHist[gHistAt] == cur) return;
+    gHist.resize(gHistAt + 1);
+    gHist.push_back(cur);
+    if (gHist.size() > 300) gHist.erase(gHist.begin());
+    gHistAt = (int) gHist.size() - 1;
 }
 
 // ---- the music
@@ -557,6 +628,12 @@ void timeline() {
         for (size_t i = i0; i < i1 && i < gPeaks.size(); i++) m = std::max(m, gPeaks[i]);
         if (m > 0) dl->AddLine(ImVec2(x, wm - m * kWaveH * 0.48f), ImVec2(x, wm + m * kWaveH * 0.48f), IM_COL32(110, 120, 200, 255));
     }
+    for (double bt : gBeats) {                                   // the beats of the map, as small ticks under the sound
+        if (gPxPerSec < 18) break;
+        float x = xOf(bt);
+        if (x < x0 || x > x1) continue;
+        dl->AddLine(ImVec2(x, wy + kWaveH - 7), ImVec2(x, wy + kWaveH - 1), IM_COL32(255, 200, 90, 150));
+    }
     // the lane of the shots
     float sy = wy + kWaveH;
     dl->AddRectFilled(ImVec2(p0.x, sy), ImVec2(x1, sy + kShotH - 2), IM_COL32(24, 24, 32, 255));
@@ -627,7 +704,7 @@ void timeline() {
         if (gDragMode == 3) seek(tOf(mp.x));
         if (gDragEv >= 0 && gDragEv < (int) events.size()) {
             Ev& e = events[gDragEv];
-            double t = tOf(mp.x) - gDragOff;
+            double t = snapT(tOf(mp.x) - gDragOff, gPxPerSec);
             if (gDragMode == 1) {
                 double len = e.t1 - e.t0;
                 e.t0 = std::max(0.0, t);
@@ -645,8 +722,8 @@ void timeline() {
     if (gPlaying && gSoundOk) gHead = soundPos();
     float hx = xOf(gHead);
     if (hx >= x0 && hx <= x1) {
-        dl->AddLine(ImVec2(hx, p0.y), ImVec2(hx, p0.y + totalH), IM_COL32(255, 80, 80, 255), 2.0f);
-        dl->AddTriangleFilled(ImVec2(hx - 6, p0.y), ImVec2(hx + 6, p0.y), ImVec2(hx, p0.y + 10), IM_COL32(255, 80, 80, 255));
+        dl->AddLine(ImVec2(hx, p0.y), ImVec2(hx, p0.y + totalH), IM_COL32(77, 156, 255, 255), 2.0f);
+        dl->AddTriangleFilled(ImVec2(hx - 6, p0.y), ImVec2(hx + 6, p0.y), ImVec2(hx, p0.y + 10), IM_COL32(77, 156, 255, 255));
     }
     if (gPlaying && (hx > x1 - 60 || hx < x0)) gScroll = gHead - 1;
 }
@@ -753,52 +830,267 @@ void eventInspector() {
     }
 }
 
-void topBar() {
-    if (ImGui::Button(gPlaying ? "  Пауза  " : "  Играть  ")) gPlaying ? pause() : play();
+// ---- the look: the grey of a video editor, one blue accent
+void applyTheme() {
+    ImGuiStyle& st = ImGui::GetStyle();
+    st.WindowRounding = 0;
+    st.ChildRounding = 0;
+    st.FrameRounding = 3;
+    st.GrabRounding = 3;
+    st.TabRounding = 0;
+    st.ScrollbarRounding = 3;
+    st.WindowPadding = ImVec2(10, 8);
+    st.FramePadding = ImVec2(8, 4);
+    st.ItemSpacing = ImVec2(8, 6);
+    st.WindowBorderSize = 1;
+    st.FrameBorderSize = 0;
+    st.TabBarBorderSize = 1;
+    ImVec4* c = st.Colors;
+    auto rgb = [](int r, int g, int b, float a = 1) { return ImVec4(r / 255.f, g / 255.f, b / 255.f, a); };
+    c[ImGuiCol_WindowBg] = rgb(35, 35, 35);
+    c[ImGuiCol_ChildBg] = rgb(30, 30, 30);
+    c[ImGuiCol_PopupBg] = rgb(40, 40, 40);
+    c[ImGuiCol_Border] = rgb(18, 18, 18);
+    c[ImGuiCol_FrameBg] = rgb(24, 24, 24);
+    c[ImGuiCol_FrameBgHovered] = rgb(50, 50, 50);
+    c[ImGuiCol_FrameBgActive] = rgb(56, 56, 56);
+    c[ImGuiCol_TitleBg] = rgb(29, 29, 29);
+    c[ImGuiCol_TitleBgActive] = rgb(29, 29, 29);
+    c[ImGuiCol_MenuBarBg] = rgb(29, 29, 29);
+    c[ImGuiCol_Tab] = rgb(35, 35, 35);
+    c[ImGuiCol_TabHovered] = rgb(55, 55, 55);
+    c[ImGuiCol_TabSelected] = rgb(46, 46, 46);
+    c[ImGuiCol_TabSelectedOverline] = rgb(45, 140, 235);
+    c[ImGuiCol_TabDimmed] = rgb(30, 30, 30);
+    c[ImGuiCol_TabDimmedSelected] = rgb(40, 40, 40);
+    c[ImGuiCol_Header] = rgb(52, 52, 52);
+    c[ImGuiCol_HeaderHovered] = rgb(64, 64, 64);
+    c[ImGuiCol_HeaderActive] = rgb(45, 140, 235, 0.55f);
+    c[ImGuiCol_Button] = rgb(58, 58, 58);
+    c[ImGuiCol_ButtonHovered] = rgb(78, 78, 78);
+    c[ImGuiCol_ButtonActive] = rgb(45, 140, 235);
+    c[ImGuiCol_SliderGrab] = rgb(45, 140, 235);
+    c[ImGuiCol_SliderGrabActive] = rgb(90, 170, 250);
+    c[ImGuiCol_CheckMark] = rgb(45, 140, 235);
+    c[ImGuiCol_DockingPreview] = rgb(45, 140, 235, 0.5f);
+    c[ImGuiCol_Separator] = rgb(18, 18, 18);
+    c[ImGuiCol_Text] = rgb(217, 217, 217);
+    c[ImGuiCol_TextDisabled] = rgb(130, 130, 130);
+    c[ImGuiCol_ScrollbarBg] = rgb(30, 30, 30);
+    c[ImGuiCol_ScrollbarGrab] = rgb(70, 70, 70);
+}
+
+ImFont* gBigFont = nullptr;
+bool gSceneOk = false;
+bool gSafe = false;
+bool gResetLayout = false;
+
+std::string timecode(double t) {
+    int f = (int) std::floor(t * 25 + 0.0001);
+    char b[40];
+    std::snprintf(b, sizeof b, "%02d:%02d:%02d:%02d", f / 25 / 3600, f / 25 / 60 % 60, f / 25 % 60, f % 25);
+    return b;
+}
+
+// the monitor: the picture, the safe zones and, under it, the timecode with the transport
+void monitorPanel() {
+    ImGui::Begin("Монитор");
+    ImGui::Checkbox("Вид из игры", &gGameView);
     ImGui::SameLine();
-    if (ImGui::Button("В начало")) seek(0);
+    ImGui::Checkbox("Безопасные зоны", &gSafe);
     ImGui::SameLine();
-    int m = (int) (gHead / 60);
-    ImGui::Text("  %d:%06.3f / %d:%05.2f", m, gHead - m * 60, (int) (gLength / 60), gLength - (int) (gLength / 60) * 60);
-    ImGui::SameLine(0, 30);
-    ImGui::SetNextItemWidth(220);
-    if (ImGui::BeginCombo("##cut", cut().name.c_str())) {
-        for (int i = 0; i < (int) gCuts.size(); i++)
-            if (ImGui::Selectable(gCuts[i].name.c_str(), i == gCut)) switchCut(i);
-        ImGui::EndCombo();
+    ImGui::TextDisabled("%s", gPreview.state.c_str());
+    const float controlsH = 58;
+    ImVec2 a = ImGui::GetContentRegionAvail();
+    float w = std::min(a.x, (a.y - controlsH) * 16.0f / 9.0f), h = w * 9.0f / 16.0f;
+    if (w > 40) {
+        ImVec2 origin = ImGui::GetCursorScreenPos();
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (a.x - w) / 2);
+        ImVec2 imgPos = ImGui::GetCursorScreenPos();
+        std::vector<Shot>& shots = cut().shots;
+        int idx = std::min(activeShot(gHead), (int) shots.size() - 1);
+        if (gGameView && gPreview.ready) {
+            gPreview.upload();
+            gPreview.ask(gHead, 960, 540, gForceAsk);
+            gForceAsk = false;
+            if (gPreview.tex) ImGui::Image((ImTextureID) (intptr_t) gPreview.tex, ImVec2(w, h));
+            else ImGui::Dummy(ImVec2(w, h));
+        } else if (gSceneOk) {
+            viewport("view", ImVec2(w, h), shots[idx].cam);
+        } else {
+            ImGui::Dummy(ImVec2(w, h));
+        }
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRect(imgPos, ImVec2(imgPos.x + w, imgPos.y + h), IM_COL32(18, 18, 18, 255));
+        if (gSafe) {
+            for (float k : {0.9f, 0.8f}) {
+                float mx = w * (1 - k) / 2, my = h * (1 - k) / 2;
+                dl->AddRect(ImVec2(imgPos.x + mx, imgPos.y + my), ImVec2(imgPos.x + w - mx, imgPos.y + h - my), IM_COL32(255, 255, 255, 90));
+            }
+            dl->AddLine(ImVec2(imgPos.x + w / 2, imgPos.y), ImVec2(imgPos.x + w / 2, imgPos.y + h), IM_COL32(255, 255, 255, 40));
+            dl->AddLine(ImVec2(imgPos.x, imgPos.y + h / 2), ImVec2(imgPos.x + w, imgPos.y + h / 2), IM_COL32(255, 255, 255, 40));
+        }
+        (void) origin;
+    }
+    // the timecode on the left, the length on the right, the transport in the middle
+    ImGui::Separator();
+    ImVec2 c0 = ImGui::GetCursorPos();
+    if (gBigFont) ImGui::PushFont(gBigFont);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.18f, 0.55f, 0.92f, 1));
+    ImGui::TextUnformatted(timecode(gHead).c_str());
+    ImGui::PopStyleColor();
+    float tcW = ImGui::CalcTextSize("00:00:00:00").x;
+    ImGui::SameLine(std::max(tcW + 40, ImGui::GetWindowWidth() - tcW - 20));
+    ImGui::TextDisabled("%s", timecode(gLength).c_str());
+    if (gBigFont) ImGui::PopFont();
+    float cx = ImGui::GetWindowWidth() / 2;
+    ImGui::SetCursorPos(ImVec2(cx - 150, c0.y));
+    std::vector<Shot>& shots = cut().shots;
+    if (ImGui::Button("|◀", ImVec2(48, 0))) {
+        double prev = 0;
+        for (const Shot& sh : shots) if (sh.t0 < gHead - 0.05 && sh.t0 > prev) prev = sh.t0;
+        seek(prev);
     }
     ImGui::SameLine();
-    if (ImGui::Button("+ сцена")) {
+    if (ImGui::Button("◀", ImVec2(48, 0))) seek(gHead - 0.04);
+    ImGui::SameLine();
+    if (ImGui::Button(gPlaying ? "❚❚" : "▶", ImVec2(60, 0))) gPlaying ? pause() : play();
+    ImGui::SameLine();
+    if (ImGui::Button("▶|", ImVec2(48, 0))) seek(gHead + 0.04);
+    ImGui::SameLine();
+    if (ImGui::Button("▶▶|", ImVec2(48, 0))) {
+        double next = gLength;
+        for (const Shot& sh : shots) if (sh.t0 > gHead + 0.05 && sh.t0 < next) next = sh.t0;
+        seek(next);
+    }
+    ImGui::End();
+}
+
+// the project: the scenes, and the shots of the chosen one
+void projectPanel() {
+    ImGui::Begin("Проект");
+    ImGui::TextDisabled("СЦЕНЫ");
+    for (int i = 0; i < (int) gCuts.size(); i++)
+        if (ImGui::Selectable(gCuts[i].name.c_str(), i == gCut)) switchCut(i);
+    if (ImGui::Button("+ сцена", ImVec2(-1, 0))) {
         gCuts.emplace_back();
         defaultShots(gCuts.back());
         gCuts.back().name = "Сцена " + std::to_string(gCuts.size());
         switchCut((int) gCuts.size() - 1);
     }
-    ImGui::SameLine(0, 30);
-    ImVec4 on(0.30f, 0.34f, 0.68f, 1), off(0.16f, 0.17f, 0.30f, 1);
-    ImGui::PushStyleColor(ImGuiCol_Button, gMode == 0 ? on : off);
-    if (ImGui::Button("  РАСКАДРОВКА  ")) gMode = 0;
-    ImGui::PopStyleColor();
-    ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Button, gMode == 1 ? on : off);
-    if (ImGui::Button("  СОБЫТИЯ И АНИМАЦИЯ  ")) gMode = 1;
-    ImGui::PopStyleColor();
-    ImGui::SameLine(0, 30);
-    if (ImGui::Button("Сохранить")) saveProject();
-    ImGui::SameLine();
-    if (ImGui::Button("▶ Бой отсюда")) launchFight(gHead);
-    ImGui::SameLine();
-    ImGui::TextDisabled("%s", gStatus.c_str());
     ImGui::Separator();
+    ImGui::TextDisabled("КАДРЫ");
+    std::vector<Shot>& shots = cut().shots;
+    for (int i = 0; i < (int) shots.size(); i++) {
+        char b[200];
+        std::snprintf(b, sizeof b, "%d  %s##shot%d", i + 1, shots[i].name.c_str(), i);
+        if (ImGui::Selectable(b, i == gSelShot)) {
+            gSelShot = i;
+            gFree = false;
+            seek(shots[i].t0);
+        }
+        ImGui::SameLine(ImGui::GetWindowWidth() - 90);
+        ImGui::TextDisabled("%s", timecode(shots[i].t0).substr(3, 5).c_str());
+    }
+    ImGui::Separator();
+    ImGui::TextDisabled("СОБЫТИЯ: %d", (int) cut().events.size());
+    ImGui::End();
+}
+
+// the properties of what is chosen (the effect controls of the editor)
+void propsPanel() {
+    ImGui::Begin("Свойства");
+    if (ImGui::CollapsingHeader("Кадр", ImGuiTreeNodeFlags_DefaultOpen)) shotInspector();
+    if (ImGui::CollapsingHeader("Событие", ImGuiTreeNodeFlags_DefaultOpen)) eventInspector();
+    ImGui::End();
+}
+
+void timelinePanel() {
+    ImGui::Begin("Таймлайн", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::Checkbox("Привязка к битам", &gSnap);
+    ImGui::SameLine();
+    ImGui::TextDisabled("двойной клик по дорожке — создать, колесо — прокрутка, Ctrl+колесо — масштаб");
+    timeline();
+    ImGui::End();
+}
+
+void storyboardPanel() {
+    ImGui::Begin("Раскадровка");
+    if (gSceneOk) storyboardStrip(ImGui::GetContentRegionAvail().y);
+    ImGui::End();
+}
+
+void buildLayout(ImGuiID dock, ImVec2 size) {
+    ImGui::DockBuilderRemoveNode(dock);
+    ImGui::DockBuilderAddNode(dock, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dock, size);
+    ImGuiID center = dock, left, right, bottom;
+    left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.16f, nullptr, &center);
+    right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.22f, nullptr, &center);
+    bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.42f, nullptr, &center);
+    ImGui::DockBuilderDockWindow("Проект", left);
+    ImGui::DockBuilderDockWindow("Свойства", right);
+    ImGui::DockBuilderDockWindow("Монитор", center);
+    ImGui::DockBuilderDockWindow("Таймлайн", bottom);
+    ImGui::DockBuilderDockWindow("Раскадровка", bottom);
+    ImGui::DockBuilderFinish(dock);
+}
+
+void menuBar() {
+    if (!ImGui::BeginMainMenuBar()) return;
+    if (ImGui::BeginMenu("Файл")) {
+        if (ImGui::MenuItem("Сохранить", "Ctrl+S")) saveProject();
+        if (ImGui::MenuItem("Запустить бой отсюда")) launchFight(gHead);
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Правка")) {
+        if (ImGui::MenuItem("Отменить", "Ctrl+Z", false, gHistAt > 0)) undo(-1);
+        if (ImGui::MenuItem("Повторить", "Ctrl+Shift+Z", false, gHistAt + 1 < (int) gHist.size())) undo(+1);
+        if (ImGui::MenuItem("Удалить событие", "Delete", false, gSelEv >= 0)) {
+            cut().events.erase(cut().events.begin() + gSelEv);
+            gSelEv = -1;
+        }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Вид")) {
+        ImGui::MenuItem("Привязка к битам", nullptr, &gSnap);
+        ImGui::MenuItem("Безопасные зоны", nullptr, &gSafe);
+        ImGui::MenuItem("Вид из игры", nullptr, &gGameView);
+        ImGui::MenuItem("Сетка (3D)", nullptr, &gLook.grid);
+        if (ImGui::MenuItem("Сбросить раскладку")) gResetLayout = true;
+        ImGui::EndMenu();
+    }
+    // the workspaces, in the middle of the bar
+    float mid = ImGui::GetWindowWidth() / 2;
+    ImGui::SetCursorPosX(mid - 150);
+    ImGui::PushStyleColor(ImGuiCol_Button, gMode == 0 ? ImVec4(0.18f, 0.55f, 0.92f, 1) : ImVec4(0.2f, 0.2f, 0.2f, 1));
+    if (ImGui::SmallButton("Раскадровка")) {
+        gMode = 0;
+        ImGui::SetWindowFocus("Раскадровка");
+    }
+    ImGui::PopStyleColor();
+    ImGui::PushStyleColor(ImGuiCol_Button, gMode == 1 ? ImVec4(0.18f, 0.55f, 0.92f, 1) : ImVec4(0.2f, 0.2f, 0.2f, 1));
+    if (ImGui::SmallButton("События и анимация")) {
+        gMode = 1;
+        ImGui::SetWindowFocus("Таймлайн");
+    }
+    ImGui::PopStyleColor();
+    ImGui::SameLine(ImGui::GetWindowWidth() - 360);
+    ImGui::TextDisabled("%s", gStatus.c_str());
+    ImGui::SameLine(ImGui::GetWindowWidth() - 130);
+    if (ImGui::SmallButton("▶ Бой отсюда")) launchFight(gHead);
+    ImGui::EndMainMenuBar();
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
     bool selftest = argc > 2 && std::strcmp(argv[1], "--selftest") == 0;
+    bool uishot = argc > 2 && std::strcmp(argv[1], "--uishot") == 0;      // draws the whole window for some frames, writes a picture of it, quits
     bool previewtest = argc > 2 && std::strcmp(argv[1], "--previewtest") == 0;      // starts the game picture, asks one frame, writes it, quits      // draws the shots to picture files and quits (for checking)
     if (!glfwInit()) return 1;
-    if (selftest || previewtest) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    if (selftest || previewtest || uishot) glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    if (uishot) glfwWindowHint(GLFW_MAXIMIZED, GLFW_FALSE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -812,19 +1104,22 @@ int main(int argc, char** argv) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    io.IniFilename = nullptr;
+    static std::string iniPath = uishot ? kRoot + "/layout_test.ini" : kRoot + "/layout.ini";
+    if (uishot) std::remove(iniPath.c_str());
+    bool haveLayout = std::ifstream(iniPath).good();
+    io.IniFilename = iniPath.c_str();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ImGui::StyleColorsDark();
-    ImGuiStyle& st = ImGui::GetStyle();
-    st.WindowRounding = 6;
-    st.FrameRounding = 5;
-    st.GrabRounding = 5;
-    st.ChildRounding = 5;
-    st.Colors[ImGuiCol_WindowBg] = ImVec4(0.07f, 0.07f, 0.10f, 1);
-    st.Colors[ImGuiCol_ChildBg] = ImVec4(0.09f, 0.09f, 0.13f, 1);
-    st.Colors[ImGuiCol_Button] = ImVec4(0.25f, 0.28f, 0.50f, 1);
-    st.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.34f, 0.38f, 0.66f, 1);
+    applyTheme();
     ImFont* font = io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeui.ttf", 19.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic());
     if (!font) io.Fonts->AddFontDefault();
+    static const ImWchar symbols[] = {0x2190, 0x23FF, 0x25A0, 0x25FF, 0x2700, 0x27BF, 0};
+    ImFontConfig merge;
+    merge.MergeMode = true;
+    static const ImWchar punct[] = {0x2010, 0x2027, 0x2030, 0x203A, 0};      // the dashes and quotes the Cyrillic set of the face leaves out
+    io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeui.ttf", 19.0f, &merge, punct);
+    io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/seguisym.ttf", 17.0f, &merge, symbols);
+    gBigFont = io.Fonts->AddFontFromFileTTF("C:/Windows/Fonts/segoeui.ttf", 30.0f, nullptr, io.Fonts->GetGlyphRangesDefault());
     ImGui_ImplGlfw_InitForOpenGL(win, true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
@@ -832,6 +1127,7 @@ int main(int argc, char** argv) {
     bool sceneOk = glOk && gScene.init(kRoot + "/data", sceneError);
     if (!glOk) sceneError = "Видеодрайвер не даёт OpenGL 3.3";
     loadProject();
+    loadBeats("D:/The LOTOS/src/main/resources/assets/lotusblight/overlay/map_2.osu");
     gLastSaved = projectText();
     loadSong();
     if (!selftest) gPreview.start();
@@ -882,19 +1178,25 @@ int main(int argc, char** argv) {
 
         if (!io.WantTextInput) {
             if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) gPlaying ? pause() : play();
-            if (ImGui::IsKeyPressed(ImGuiKey_Delete) && gMode == 1 && gSelEv >= 0 && gSelEv < (int) cut().events.size()) {
+            if (ImGui::IsKeyPressed(ImGuiKey_Delete) && gSelEv >= 0 && gSelEv < (int) cut().events.size()) {
                 cut().events.erase(cut().events.begin() + gSelEv);
                 gSelEv = -1;
             }
             if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S)) saveProject();
+            if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z)) undo(io.KeyShift ? +1 : -1);
+            if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y)) undo(+1);
             if (ImGui::IsKeyPressed(ImGuiKey_Home)) seek(0);
+            if (ImGui::IsKeyPressed(ImGuiKey_End)) seek(gLength);
+            if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) seek(gHead - (io.KeyShift ? 1.0 : 0.04));
+            if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) seek(gHead + (io.KeyShift ? 1.0 : 0.04));
             if (ImGui::IsKeyPressed(ImGuiKey_F)) gFree = !gFree;
         }
         if (gPlaying && gSoundOk) gHead = soundPos();
+        if (!ImGui::IsMouseDown(0)) trackHistory();
         // whatever is changed is written at once, so the game's picture (which reads the file) follows
         if (ImGui::GetTime() - gLastEdit > 0.25) {
             std::string now = projectText();
-            if (now != gLastSaved) {
+            if (now != gLastSaved && !uishot) {
                 writeProject(now);
                 gForceAsk = true;
             }
@@ -902,70 +1204,34 @@ int main(int argc, char** argv) {
         }
         if (gPlaying) gForceAsk = true;
 
+        if (uishot && argc > 3 && ImGui::GetFrameCount() == 20) {                    // for the picture of the timeline: some blocks, and its tab
+            cut().events.push_back({0, 20.0, 22.5, "Тряска", 1});
+            cut().events.push_back({1, 36.6, 37.5, "Субтитр", 1});
+            cut().events.push_back({2, 38.0, 38.4, "Вспышка", 1});
+            cut().events.push_back({3, 40.0, 46.0, "Удар", 1});
+            cut().events.push_back({4, 22.1, 24.0, "Змея", 1});
+            gSelEv = 1;
+            gScroll = 15;
+            gPxPerSec = 60;
+        }
+        if (uishot && argc > 3 && ImGui::GetFrameCount() == 40) ImGui::SetWindowFocus("Таймлайн");
+        menuBar();
         ImGuiViewport* vp = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(vp->WorkPos);
-        ImGui::SetNextWindowSize(vp->WorkSize);
-        ImGui::Begin("root", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
-        topBar();
-
-        ImVec2 avail = ImGui::GetContentRegionAvail();
-        float bottomH = gMode == 0 ? 220.0f : timelineHeight() + 14;
-        float mainH = std::max(160.0f, avail.y - bottomH - 8);
-        float sideW = 340;
-        // the middle: the picture, with the side panel
-        ImGui::BeginChild("viewarea", ImVec2(avail.x - sideW - 8, mainH), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
-        {
-            ImVec2 a = ImGui::GetContentRegionAvail();
-            std::vector<Shot>& shots = cut().shots;
-            int idx = gMode == 0 ? std::min(gSelShot, (int) shots.size() - 1) : activeShot(gHead);
-            {
-                ImGui::Checkbox("Вид из игры", &gGameView);
-                ImGui::SameLine();
-                ImGui::TextDisabled("%s", gPreview.state.c_str());
-                if (gGameView && gPreview.ready) {
-                    a = ImGui::GetContentRegionAvail();
-                    float w = std::min(a.x, a.y * 16.0f / 9.0f), h = w * 9.0f / 16.0f;
-                    gPreview.upload();
-                    // the picture is asked for the moment of the play head (the game's own camera from the shots), again and again while it plays
-                    gPreview.ask(gHead, 960, 540, gForceAsk);
-                    gForceAsk = false;
-                    ImGui::SetCursorPosX((a.x - w) / 2 + ImGui::GetCursorPosX());
-                    if (gPreview.tex) ImGui::Image((ImTextureID) (intptr_t) gPreview.tex, ImVec2(w, h));
-                } else if (sceneOk) {
-                    ImGui::SameLine();
-                    ImGui::Checkbox("Свободный вид (F)", &gFree);
-                    ImGui::SameLine();
-                    ImGui::Checkbox("Сетка", &gLook.grid);
-                    ImGui::SameLine();
-                    bool post = gLook.posterize > 0;
-                    if (ImGui::Checkbox("Постеризация", &post)) gLook.posterize = post ? 6.0f : 0.0f;
-                    ImGui::SameLine();
-                    ImGui::SetNextItemWidth(140);
-                    ImGui::SliderFloat("Контур", &gLook.rim, 0, 2);
-                    a = ImGui::GetContentRegionAvail();
-                    float w = std::min(a.x, a.y * 16.0f / 9.0f), h = w * 9.0f / 16.0f;
-                    ImGui::SetCursorPosX((a.x - w) / 2 + ImGui::GetCursorPosX());
-                    viewport("view", ImVec2(w, h), shots[idx].cam);
-                }
-            }
+        ImGuiID dock = ImGui::GetID("LotosDock");
+        ImGui::DockSpaceOverViewport(dock, vp, ImGuiDockNodeFlags_None);
+        if (!haveLayout || gResetLayout) {
+            buildLayout(dock, vp->WorkSize);
+            haveLayout = true;
+            gResetLayout = false;
         }
-        ImGui::EndChild();
-        ImGui::SameLine();
-        ImGui::BeginChild("side", ImVec2(sideW, mainH), ImGuiChildFlags_Borders);
-        if (gMode == 0) shotInspector();
-        else eventInspector();
-        ImGui::EndChild();
+        gSceneOk = sceneOk;
+        monitorPanel();
+        projectPanel();
+        propsPanel();
+        timelinePanel();
+        storyboardPanel();
 
-        // the bottom
-        if (gMode == 0) {
-            if (sceneOk) storyboardStrip(bottomH);
-        } else {
-            ImGui::BeginChild("timeline", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-            timeline();
-            ImGui::EndChild();
-        }
-        ImGui::End();
-
+        static int frameNo = 0;
         ImGui::Render();
         int w, h;
         glfwGetFramebufferSize(win, &w, &h);
@@ -975,8 +1241,16 @@ int main(int argc, char** argv) {
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(win);
+        if (uishot && ++frameNo == 90) {
+            std::vector<unsigned char> px((size_t) w * h * 4);
+            glReadBuffer(GL_BACK);
+            glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+            stbi_flip_vertically_on_write(1);
+            stbi_write_png(argv[2], w, h, 4, px.data(), w * 4);
+            break;
+        }
     }
-    saveProject();
+    if (!uishot) saveProject();
     gPreview.stop();
     unloadSong();
     if (gEngineOk) ma_engine_uninit(&gEngine);
