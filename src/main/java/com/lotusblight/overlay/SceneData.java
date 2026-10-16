@@ -93,6 +93,7 @@ final class SceneData {
 
     /** The first cut made for a scene program, or null. */
     Cut forProgram(String program) {
+        if (!ENABLED) return null;
         for (Cut c : cuts.values()) if (c.program.equals(program)) return c;
         return null;
     }
@@ -156,6 +157,12 @@ final class SceneData {
         }
         return d;
     }
+
+    /**
+     * Whether the scenes of the editor act on the picture at all. Off in the game; the editor's preview turns it on
+     * (-Dlotos.useScenes=true), and so can a test run of the fight.
+     */
+    static final boolean ENABLED = Boolean.getBoolean("lotos.useScenes");
 
     private static SceneData live;
     private static long liveStamp, liveChecked;

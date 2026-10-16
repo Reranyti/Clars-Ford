@@ -27,6 +27,7 @@ import java.io.PrintStream;
 public final class PreviewMain {
     public static void main(String[] args) throws Exception {
         System.setProperty("java.awt.headless", "true");
+        System.setProperty("lotos.useScenes", "true");                    // the editor's picture is the one the scenes act on
         OutputStream raw = System.out;
         System.setOut(new PrintStream(System.err, true));      // nothing but answers goes down the pipe
 

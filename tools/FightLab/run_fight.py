@@ -38,7 +38,7 @@ def main():
         args += ["--video", str(lab.VIDEO)]
     flag = {"song2": "--start2", "song3": "--start3", "cutscene": "--cutscene", "finale": "--finale"}.get(kind, "--start2")
     args += [flag, start]
-    java = [lab.JAVA, "-Xmx1500m", "-Dlotos.scenes=" + str(lab.ROOT / "tools" / "LotosEditor" / "project.txt"), "-cp",
+    java = [lab.JAVA, "-Xmx1500m", "-cp",
             ";".join([str(out), str(lab.RES)] + lab.JARS), "com.lotusblight.overlay.GameMain"] + args
     log = open(lab.OUT / "last_run.log", "wb")
     subprocess.Popen(java, cwd=str(lab.ROOT), stdout=log, stderr=subprocess.STDOUT, creationflags=lab.DETACHED)
