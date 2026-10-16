@@ -154,7 +154,7 @@ final class SceneData {
             return live;
         }
         long now = System.currentTimeMillis();
-        if (live == null || now - liveChecked > 400) {
+        if (live == null || now - liveChecked > 30) {
             liveChecked = now;
             java.io.File f = new java.io.File(path);
             if (f.exists() && (live == null || f.lastModified() != liveStamp)) {

@@ -1082,7 +1082,11 @@ void monitorBody() {
         if (gGameView && gPreview.ready) {
             gPreview.upload();
             // while it plays the picture is small and quick; standing still it is drawn as large as the monitor shows it
-            int qw = gPlaying ? 960 : (w >= 1000 ? 1920 : 1280), qh = qw * 9 / 16;
+            static bool wasDown = false;
+            bool down = ImGui::IsMouseDown(0) || ImGui::IsMouseDown(1);
+            if (wasDown && !down) gForceAsk = true;
+            wasDown = down;
+            int qw = (gPlaying || down) ? 960 : (w >= 1000 ? 1920 : 1280), qh = qw * 9 / 16;
             gPreview.ask(gHead, qw, qh, gForceAsk);
             gForceAsk = false;
             std::string pr;
@@ -1157,7 +1161,7 @@ void monitorBody() {
 
 void monitorPanel() {
     if (gMonMax) return;
-    ImGui::Begin("Монитор");
+    ImGui::Begin("Монитор", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     monitorBody();
     ImGui::End();
 }
@@ -1170,7 +1174,7 @@ void monitorFull() {
     ImGui::SetNextWindowSize(vp->WorkSize);
     ImGui::SetNextWindowFocus();
     ImGui::Begin("Монитор (во весь экран)", nullptr,
-                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking);
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoScrollWithMouse);
     monitorBody();
     ImGui::End();
 }
@@ -1442,7 +1446,7 @@ int main(int argc, char** argv) {
         if (gPlaying && gSoundOk) gHead = soundPos();
         if (!ImGui::IsMouseDown(0)) trackHistory();
         // whatever is changed is written at once, so the game's picture (which reads the file) follows
-        if (ImGui::GetTime() - gLastEdit > 0.25) {
+        if (ImGui::GetTime() - gLastEdit > (ImGui::IsMouseDown(0) || ImGui::IsMouseDown(1) ? 0.03 : 0.2)) {
             std::string now = projectText();
             if (now != gLastSaved && !uishot) {
                 writeProject(now);
