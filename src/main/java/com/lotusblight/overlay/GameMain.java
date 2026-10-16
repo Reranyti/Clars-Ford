@@ -721,6 +721,7 @@ public final class GameMain {
                         if (recordFile == null) Layers.draw(g, w, h, "eye", c -> contact.renderEye(c, w, h, tl));
                         drawSong2(g, w, h, t);
                         if (phraseScreen != null && recordFile == null) Layers.draw(g, w, h, "phrases", c -> phraseScreen.render(c, w, h, tl));      // the words, on black, over everything
+                        SceneFx.flash(g, w, h, t);
                         if (recordFile != null) recordHud(g, w, h, t);
                     }
                     if (!g2.alive()) end(Phase.DEFEAT);

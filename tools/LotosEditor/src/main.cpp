@@ -39,6 +39,7 @@ struct Ev {
     double t0, t1;
     std::string label;
     float value = 1;
+    bool autogen = false;      // made by the draft from the music: the draft can be remade, these go and come again
 };
 struct Shot {
     std::string name;
@@ -170,7 +171,7 @@ std::string projectText() {
               << s.cam.target.x << ' ' << s.cam.target.y << ' ' << s.cam.target.z << '\t' << s.cam.fov << '\t' << s.cam.roll << '\t' << esc(s.note) << '\t' << (s.move ? 1 : 0) << '\n';
         for (const Layer& y : c.layers)
             f << "O\t" << y.id << '\t' << (y.visible ? 1 : 0) << '\t' << y.dx << '\t' << y.dy << '\t' << y.scale << '\t' << y.rot * 3.14159265358979 / 180.0 << '\t' << y.alpha << '\t' << esc(y.name) << '\n';
-        for (const Ev& e : c.events) f << "E\t" << e.track << '\t' << e.t0 << '\t' << e.t1 << '\t' << esc(e.label) << '\t' << e.value << '\n';
+        for (const Ev& e : c.events) f << "E\t" << e.track << '\t' << e.t0 << '\t' << e.t1 << '\t' << esc(e.label) << '\t' << e.value << '\t' << (e.autogen ? 'A' : '-') << '\n';
     }
     return f.str();
 }
@@ -261,6 +262,7 @@ void parseProject(std::istream& f) {
                 e.t1 = std::stod(p[3]);
                 e.label = unesc(p[4]);
                 e.value = p.size() > 5 ? std::stof(p[5]) : 1.0f;
+                e.autogen = p.size() > 6 && p[6] == "A";
                 gCuts.back().events.push_back(e);
             }
         } catch (...) {
@@ -909,6 +911,56 @@ void eventInspector() {
 }
 
 // ---- the look: the grey of a video editor, one blue accent
+// ---- the draft of the dynamics, made from the music and from the author's own map of circles; every block of it can be moved, changed or deleted
+void clearDraft() {
+    std::vector<Ev>& ev = cut().events;
+    ev.erase(std::remove_if(ev.begin(), ev.end(), [](const Ev& e) { return e.autogen; }), ev.end());
+}
+
+void makeDraft() {
+    clearDraft();
+    std::vector<Ev>& ev = cut().events;
+    auto add = [&](int track, double t, double len, const char* label, float value) {
+        Ev e;
+        e.track = track;
+        e.t0 = t;
+        e.t1 = t + len;
+        e.label = label;
+        e.value = value;
+        e.autogen = true;
+        ev.push_back(e);
+    };
+    // 1. after every stop of the circles the picture jerks, as if the music kicks it
+    for (size_t i = 1; i < gBeats.size(); i++)
+        if (gBeats[i] - gBeats[i - 1] >= 0.6) add(0, gBeats[i], 0.3, "Рывок", 1.0f);
+    // 2. every fourth circle gives the picture a small tremble
+    for (size_t i = 0; i < gBeats.size(); i += 4) add(0, gBeats[i], 0.14, "Тряска", 0.35f);
+    // 3. where the music grows suddenly (the level of the next second against the last one): a flash, a push in and a shake
+    auto level = [&](long a, long b) {
+        a = std::max(0L, a);
+        b = std::min((long) gPeaks.size(), b);
+        if (b <= a) return 0.0;
+        double sum = 0;
+        for (long i = a; i < b; i++) sum += gPeaks[i];
+        return sum / (b - a);
+    };
+    double mx = 0;
+    for (float v : gPeaks) mx = std::max(mx, (double) v);
+    for (long i = 150; i < (long) gPeaks.size() - 150; i += 5) {
+        double before = level(i - 120, i - 10), after = level(i + 10, i + 120);
+        if (after > before * 1.7 && after > 0.12 * mx) {
+            double t = i / 100.0;
+            add(2, t, 0.4, "Вспышка", 1.0f);
+            add(0, t, 1.8, "Наезд", 1.0f);
+            add(0, t, 0.6, "Тряска", 1.3f);
+            i += 400;
+        }
+    }
+    std::sort(ev.begin(), ev.end(), [](const Ev& a, const Ev& b) { return a.t0 < b.t0; });
+    gSelEv = -1;
+    gStatus = "Черновик динамики собран: его можно править";
+}
+
 void applyTheme() {
     ImGuiStyle& st = ImGui::GetStyle();
     st.WindowRounding = 0;
@@ -1303,6 +1355,11 @@ void menuBar() {
             cut().events.erase(cut().events.begin() + gSelEv);
             gSelEv = -1;
         }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Сцена")) {
+        if (ImGui::MenuItem("Собрать черновик динамики по музыке")) makeDraft();
+        if (ImGui::MenuItem("Убрать черновик")) clearDraft();
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Вид")) {

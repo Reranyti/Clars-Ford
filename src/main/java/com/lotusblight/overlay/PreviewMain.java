@@ -128,5 +128,6 @@ public final class PreviewMain {
         }));
         cam3.dispose();
         Layers.draw(g, w, h, "phrases", c -> phrases.render(c, w, h, t));
+        SceneFx.flash(g, w, h, t);
     }
 }

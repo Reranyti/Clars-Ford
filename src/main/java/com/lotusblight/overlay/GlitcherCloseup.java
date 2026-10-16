@@ -187,6 +187,11 @@ final class GlitcherCloseup {
             else roll += 0.012 * rw2 * Math.sin(ms / 700.0);
             dy += rw2 * h * 0.006 * Math.sin(ms / 230.0);
         }
+        double[] fx = SceneFx.camera(ms);                                                 // the camera events put on the timeline in the editor
+        roll += fx[0];
+        zoom *= fx[1];
+        dx += fx[2] * h;
+        dy += fx[3] * h;
         return new double[]{roll, zoom, dx, dy};
     }
 
