@@ -64,6 +64,37 @@ final class RhythmCameos {
         p.dispose();
     }
 
+    private static final java.util.Map<String, java.awt.image.BufferedImage> marks = new java.util.HashMap<>();
+
+    /** The mark of the game a cameo nods to (a banner with its own ground), or null when its file is not in the jar yet. */
+    private static synchronized java.awt.image.BufferedImage mark(String name) {
+        if (!marks.containsKey(name)) {
+            java.awt.image.BufferedImage img = null;
+            try (java.io.InputStream in = RhythmCameos.class.getResourceAsStream("/assets/lotusblight/overlay/logos/" + name + ".png")) {
+                if (in != null) img = javax.imageio.ImageIO.read(in);
+            } catch (java.io.IOException ignored) {
+                // no mark: the cameo goes without it
+            }
+            marks.put(name, img);
+        }
+        return marks.get(name);
+    }
+
+    /** The game's own banner, top and middle, small; it comes in a little at the start of the cameo. */
+    private static void banner(Graphics2D g, int w, int h, String name, double t) {
+        java.awt.image.BufferedImage img = mark(name);
+        if (img == null) return;
+        double ph = h * 0.15, pw = ph * img.getWidth() / img.getHeight();
+        double in = smooth(t / 0.35);
+        Graphics2D p = (Graphics2D) g.create();
+        p.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        p.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, (float) in));
+        p.translate(w / 2.0, h * 0.02 + ph / 2 - (1 - in) * h * 0.03);
+        p.setClip(new RoundRectangle2D.Double(-pw / 2, -ph / 2, pw, ph, 14, 14));
+        p.drawImage(img, (int) (-pw / 2), (int) (-ph / 2), (int) pw, (int) ph, null);
+        p.dispose();
+    }
+
     static void render(Graphics2D g, int w, int h, int kind, double t) {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
@@ -74,6 +105,7 @@ final class RhythmCameos {
             default -> seventh(g, w, h, t);
         }
         plate(g, w, h, t);
+        banner(g, w, h, switch (kind) { case 1 -> "adofai"; default -> ""; }, t);
     }
 
     private static double smooth(double x) {
