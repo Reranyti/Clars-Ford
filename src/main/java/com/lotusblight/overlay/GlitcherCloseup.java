@@ -38,6 +38,21 @@ final class GlitcherCloseup {
     private final GlitchFx glitch = new GlitchFx();
     private double[] hits = new double[0];
     private double fistX, fistY;
+    private double faceX, faceY, faceU, handRX, handRY;
+
+    /** The middle of the face on the screen and the size of a skin unit there: {x, y, u} (as of the last picture). */
+    double[] face() {
+        return new double[]{faceX, faceY, faceU};
+    }
+
+    /** The right and the left fist on the screen: {rx, ry, lx, ly} (as of the last picture). */
+    double[] hands() {
+        return new double[]{handRX, handRY, fistX, fistY};
+    }
+
+    /** A test of the Glitcher changing the cards over (the arms are driven by this instead of the game's own animation); off in the game. */
+    static boolean cardDemo;
+    static double cardPeriod = 1.3, cardSwap = 0.32, cardClock;
     private boolean haveFist;
     private final boolean useScene;
     private long seenVersion = Long.MIN_VALUE;
@@ -482,6 +497,21 @@ final class GlitcherCloseup {
         rend.setLight(key, amb);
         u *= scaleMul;
         ox += dxScreen * w;
+        if (cardDemo) {                                                                               // one fist up at the face with a card, the other at the middle of the body with the next
+            double[] sw = MaskCards.swap(cardClock, cardPeriod, cardSwap);
+            double k = sw[1];
+            boolean rightUp = ((int) sw[0]) % 2 == 0;
+            double[] raised = {3.5, 26.5, 14.0}, mid = {4.5, 15.5, 11.0};
+            double[] a = rightUp ? raised : mid, b = rightUp ? mid : raised;
+            double[] ra = {-(a[0] + (b[0] - a[0]) * k), a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k};
+            double[] la = {(b[0] + (a[0] - b[0]) * k), b[1] + (a[1] - b[1]) * k, b[2] + (a[2] - b[2]) * k};
+            actor.reach(Rig15.Limb.R_ARM, ra[0], ra[1], ra[2], 1);
+            actor.reach(Rig15.Limb.L_ARM, la[0], la[1], la[2], 1);
+            actor.shapeR = Actor.Hand.GRIP;
+            actor.shapeL = Actor.Hand.GRIP;
+            actor.fistR = 0.7;
+            actor.fistL = 0.7;
+        }
         if (useScene && Layers.cut() != null) PoseKeys.apply(actor, ms / 1000.0, Layers.cut().keys);       // the poses set in the editor, laid over the code's own
         long pf0 = System.nanoTime();
         actor.draw(rend, u * RES, ox * RES, oy * RES);
@@ -513,6 +543,15 @@ final class GlitcherCloseup {
             fistX = ox + hp[0] * u;
             fistY = oy - hp[1] * u;
             haveFist = true;
+        }
+        if (actor.lastSkel != null) {                                                                // where his face and his other fist are, for what is held up to it
+            double[] top0 = proj(actor.lastSkel.headTop());
+            faceX = ox + top0[0] * u;
+            faceY = oy - top0[1] * u + u * 4.0;
+            faceU = u;
+            double[] hr = proj(actor.lastSkel.endPoint(Rig15.Limb.R_ARM));
+            handRX = ox + hr[0] * u;
+            handRY = oy - hr[1] * u;
         }
         // ---- the scream: his mouth opens in the black of the face
         if (scream > 0.15 && actor.lastSkel != null) {
