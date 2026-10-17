@@ -29,6 +29,41 @@ final class RhythmCameos {
         };
     }
 
+    private static java.awt.image.BufferedImage forsaken;
+    private static boolean forsakenTried;
+
+    /** The Forsaken wordmark the author supplied (the music is from that game), or null when the file is not in the jar. */
+    private static synchronized java.awt.image.BufferedImage forsaken() {
+        if (!forsakenTried) {
+            forsakenTried = true;
+            try (java.io.InputStream in = RhythmCameos.class.getResourceAsStream("/assets/lotusblight/overlay/logos/forsaken.png")) {
+                if (in != null) forsaken = javax.imageio.ImageIO.read(in);
+            } catch (java.io.IOException ignored) {
+                // no logo: the plate is left out
+            }
+        }
+        return forsaken;
+    }
+
+    /** The game's mark at the top corner of the window; it pulses on the beat of the music (about 87 to the minute), with a dark halo so that it reads on any ground. */
+    private static void plate(Graphics2D g, int w, int h, double t) {
+        java.awt.image.BufferedImage logo = forsaken();
+        if (logo == null) return;
+        double beat = 60.0 / 87.0;
+        double pulse = Math.exp(-((t % beat) / beat) * 5.0);
+        double ph = h * 0.15, pw = ph * logo.getWidth() / logo.getHeight();
+        double sc = 1 + 0.08 * pulse;
+        Graphics2D p = (Graphics2D) g.create();
+        p.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        p.translate(h * 0.03 + pw / 2, h * 0.02 + ph / 2);
+        p.scale(sc, sc);
+        p.setPaint(new RadialGradientPaint(0, 0, (float) (pw * 0.62), new float[]{0f, 0.65f, 1f},
+                new Color[]{new Color(0, 0, 0, 175), new Color(0, 0, 0, 120), new Color(0, 0, 0, 0)}));
+        p.fill(new Ellipse2D.Double(-pw * 0.62, -ph * 0.9, pw * 1.24, ph * 1.8));
+        p.drawImage(logo, (int) (-pw / 2), (int) (-ph / 2), (int) pw, (int) ph, null);
+        p.dispose();
+    }
+
     static void render(Graphics2D g, int w, int h, int kind, double t) {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
@@ -38,6 +73,7 @@ final class RhythmCameos {
             case 2 -> lanes(g, w, h, t);
             default -> seventh(g, w, h, t);
         }
+        plate(g, w, h, t);
     }
 
     private static double smooth(double x) {
