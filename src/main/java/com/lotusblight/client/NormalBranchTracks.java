@@ -36,6 +36,11 @@ import java.util.Optional;
  */
 final class NormalBranchTracks {
     private static final Logger LOG = LogUtils.getLogger();
+    /**
+     * The third song and the cutscene before it are being made again from the start: until the new ones exist they are neither read from the jar
+     * nor decoded (that was ~65 MB of WAV written to the temp folder at every start), and the fight ends after the second song.
+     */
+    private static final boolean SONG3_AND_INTERLUDE = false;
     private static final String[] SOURCES = {"overlay/map_1.ogg", "overlay/map_2.ogg", "overlay/honcho_briefing.ogg", "overlay/song3.ogg", "overlay/interlude.ogg"};
     private static final String[] OUTPUTS = {"song1.wav", "song2.wav", "contact.wav", "song3.wav", "interlude.wav"};
     private static volatile boolean hasContact, hasSong3, hasInterlude;
@@ -109,6 +114,7 @@ final class NormalBranchTracks {
     static void prepare(Minecraft mc) {
         byte[][] ogg = new byte[SOURCES.length][];
         for (int i = 0; i < SOURCES.length; i++) {
+            if (!SONG3_AND_INTERLUDE && i >= 3) continue;
             Optional<Resource> res = mc.getResourceManager().getResource(new ResourceLocation(LotusBlight.MODID, SOURCES[i]));
             if (res.isEmpty()) {
                 if (i < 2) LOG.warn("Нормальная_ветка: {} is missing", SOURCES[i]);
