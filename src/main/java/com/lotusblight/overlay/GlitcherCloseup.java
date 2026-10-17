@@ -52,6 +52,8 @@ final class GlitcherCloseup {
 
     /** A test of the Glitcher changing the cards over (the arms are driven by this instead of the game's own animation); off in the game. */
     static boolean cardDemo;
+    /** The Glitcher in a fedora and a long coat (off in the game until the author asks for it). */
+    static boolean mafioso;
     static double cardPeriod = 1.3, cardSwap = 0.32, cardClock;
     private boolean haveFist;
     private final boolean useScene;
@@ -64,6 +66,7 @@ final class GlitcherCloseup {
     /** {@code useScene} false: only the author's own defaults, whatever the scene says (for listing them to the editor). */
     GlitcherCloseup(int[] skin, boolean useScene) {
         this.actor = new Actor(skin, false);
+        if (mafioso) actor.dressMafioso();
         this.useScene = useScene;
         rebuild(null);
     }

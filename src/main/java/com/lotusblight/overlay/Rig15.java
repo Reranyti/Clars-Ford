@@ -87,7 +87,15 @@ final class Rig15 {
     final double[] limbUpper = new double[4], limbLower = new double[4];
     final List<Face> faces = new ArrayList<>();
 
+    /** How round the boxes are, 0 (plain boxes) to about 0.5: their corners and edges are pulled in towards a sphere, the faces cut at the skin's pixels so that it stays sharp. */
+    final double round;
+
     private Rig15(boolean honcho) {
+        this(honcho, 0);
+    }
+
+    private Rig15(boolean honcho, double round) {
+        this.round = round;
         this.honcho = honcho;
         double armC = honcho ? 6 : 5.5;
         pivot[Joint.LOWER_TORSO.ordinal()] = new double[]{0, 13, 0};
@@ -125,6 +133,11 @@ final class Rig15 {
     /** The standard slim skin: 3-pixel arms, with the outer layers. */
     static Rig15 standard() {
         return new Rig15(false);
+    }
+
+    /** The standard skin with its boxes rounded off by {@code round} (0 is the plain rig). */
+    static Rig15 rounded(double round) {
+        return new Rig15(false, round);
     }
 
     /** Honcho's proportions: 4-pixel arms, only the layer over the head. */
@@ -186,12 +199,81 @@ final class Rig15 {
         double top = by + h, bottom = by;
         double ya = y0 <= bottom ? y0 - grow : y0, yb = y1 >= top ? y1 + grow : y1;
         int r1 = v + d + (int) (top - y1), r0 = v + d + (int) (top - y0);
+        if (round > 0) {
+            roundedSlab(j, bx, by, bz, w, h, d, u, v, grow, ya, yb, y0, y1);
+            return;
+        }
         faces.add(new Face(j, new double[][]{{x0, yb, z0}, {x1, yb, z0}, {x1, yb, z1}, {x0, yb, z1}}, u + d, v, u + d + w, v + d));
         faces.add(new Face(j, new double[][]{{x0, ya, z1}, {x1, ya, z1}, {x1, ya, z0}, {x0, ya, z0}}, u + d + w, v, u + d + 2 * w, v + d));
         faces.add(new Face(j, new double[][]{{x0, yb, z0}, {x0, yb, z1}, {x0, ya, z1}, {x0, ya, z0}}, u, r1, u + d, r0));
         faces.add(new Face(j, new double[][]{{x0, yb, z1}, {x1, yb, z1}, {x1, ya, z1}, {x0, ya, z1}}, u + d, r1, u + d + w, r0));
         faces.add(new Face(j, new double[][]{{x1, yb, z1}, {x1, yb, z0}, {x1, ya, z0}, {x1, ya, z1}}, u + d + w, r1, u + 2 * d + w, r0));
         faces.add(new Face(j, new double[][]{{x1, yb, z0}, {x0, yb, z0}, {x0, ya, z0}, {x1, ya, z0}}, u + 2 * d + w, r1, u + 2 * d + 2 * w, r0));
+    }
+
+    /** A point of the box pulled in towards the ellipsoid round the whole box (not only this slab of it), so that the pieces of a limb meet. */
+    private double[] rounded(double[] c, double[] e, double x, double y, double z) {
+        double qx = (x - c[0]) / e[0], qy = (y - c[1]) / e[1], qz = (z - c[2]) / e[2];
+        double len = Math.sqrt(qx * qx + qy * qy + qz * qz);
+        double f = len < 1e-9 ? 1 : (1 - round) + round / Math.max(1, len);
+        return new double[]{c[0] + qx * f * e[0], c[1] + qy * f * e[1], c[2] + qz * f * e[2]};
+    }
+
+    /**
+     * The same box as {@link #slab} but every face cut into one quad per skin pixel, its points pulled in at the corners and edges. The sides
+     * run between ya and yb in whole rows of the skin (a row at the ends may be a part of one).
+     */
+    private void roundedSlab(Joint j, double bx, double by, double bz, int w, int h, int d, int u, int v, double grow, double ya, double yb, double y0, double y1) {
+        double x0 = bx - grow, x1 = bx + w + grow, z0 = bz - grow, z1 = bz + d + grow;
+        double top = by + h;
+        double[] c = {bx + w / 2.0, by + h / 2.0, bz + d / 2.0}, e = {w / 2.0 + grow, h / 2.0 + grow, d / 2.0 + grow};
+        // the horizontal rings of the sides: at every whole unit of height between ya and yb
+        java.util.List<Double> ys = new java.util.ArrayList<>();
+        ys.add(yb);
+        for (double y = Math.floor(yb - 1e-9); y > ya + 1e-9; y -= 1) if (y < yb - 1e-9) ys.add(y);
+        ys.add(ya);
+        // top and bottom: grids of w x d pixels
+        for (int cap = 0; cap < 2; cap++) {
+            double y = cap == 0 ? yb : ya;
+            boolean real = cap == 0 ? y1 >= top : y0 <= by;                                  // the cap on a cut inside the limb is not rounded off at its edges either
+            for (int i = 0; i < w; i++) {
+                for (int k = 0; k < d; k++) {
+                    double xa = x0 + (x1 - x0) * i / w, xb = x0 + (x1 - x0) * (i + 1) / w, za = z0 + (z1 - z0) * k / d, zb = z0 + (z1 - z0) * (k + 1) / d;
+                    double[][] q = {{xa, y, za}, {xb, y, za}, {xb, y, zb}, {xa, y, zb}};
+                    double[][] pts = new double[4][];
+                    for (int m = 0; m < 4; m++) pts[m] = rounded(c, e, q[m][0], q[m][1], q[m][2]);
+                    if (cap == 0) faces.add(new Face(j, pts, u + d + i, v + k, u + d + i + 1, v + k + 1));
+                    else faces.add(new Face(j, new double[][]{pts[3], pts[2], pts[1], pts[0]}, u + d + w + i, v + k, u + d + w + i + 1, v + k + 1));
+                }
+            }
+        }
+        // the four sides, a quad for every pixel column and every unit of height
+        for (int s = 0; s < 4; s++) {
+            int cols = s % 2 == 0 ? d : w, uBase = s == 0 ? u : s == 1 ? u + d : s == 2 ? u + d + w : u + 2 * d + w;
+            for (int i = 0; i < cols; i++) {
+                for (int r = 0; r + 1 < ys.size(); r++) {
+                    double ta = ys.get(r), tb = ys.get(r + 1);
+                    double[][] q = new double[4][];
+                    double f0 = (double) i / cols, f1 = (double) (i + 1) / cols;
+                    // side 0: -x (z runs 0..d), 1: +z (x 0..w), 2: +x (z runs d..0), 3: -z (x runs w..0)
+                    double[] a0, a1;
+                    switch (s) {
+                        case 0 -> { a0 = new double[]{x0, z0 + (z1 - z0) * f0}; a1 = new double[]{x0, z0 + (z1 - z0) * f1}; }
+                        case 1 -> { a0 = new double[]{x0 + (x1 - x0) * f0, z1}; a1 = new double[]{x0 + (x1 - x0) * f1, z1}; }
+                        case 2 -> { a0 = new double[]{x1, z1 - (z1 - z0) * f0}; a1 = new double[]{x1, z1 - (z1 - z0) * f1}; }
+                        default -> { a0 = new double[]{x1 - (x1 - x0) * f0, z0}; a1 = new double[]{x1 - (x1 - x0) * f1, z0}; }
+                    }
+                    q[0] = rounded(c, e, a0[0], ta, a0[1]);
+                    q[1] = rounded(c, e, a1[0], ta, a1[1]);
+                    q[2] = rounded(c, e, a1[0], tb, a1[1]);
+                    q[3] = rounded(c, e, a0[0], tb, a0[1]);
+                    int vTop = v + d + (int) Math.floor(top - ta + 1e-9), vBot = v + d + (int) Math.ceil(top - tb - 1e-9);
+                    vTop = Math.max(v + d, Math.min(v + d + h - 1, vTop));                 // the strips of the grown layer past the ends keep the skin's end rows
+                    vBot = Math.max(vTop + 1, Math.min(v + d + h, vBot));
+                    faces.add(new Face(j, q, uBase + i, vTop, uBase + i + 1, vBot));
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------ fingers

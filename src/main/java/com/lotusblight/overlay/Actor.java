@@ -29,7 +29,7 @@ final class Actor {
     }
 
     final Rig15 rig;
-    final int[] skin;
+    int[] skin;
     final Pose15 pose = new Pose15();
     double viewYaw, viewPitch;
     /** How closed each hand is, right and left, on top of its shape: 0 leaves the shape alone, 1 is a fist. */
@@ -48,9 +48,18 @@ final class Actor {
     private long lastNano;
     private final long born = PauseClock.nano();
 
+    /** How round a new standard figure is made, 0 for the plain boxes (the game keeps 0 until the author asks for round). */
+    static double roundness;
+
     Actor(int[] skin, boolean honcho) {
-        this.rig = honcho ? Rig15.honcho() : Rig15.standard();
+        this.rig = honcho ? Rig15.honcho() : roundness > 0 ? Rig15.rounded(roundness) : Rig15.standard();
         this.skin = skin;
+    }
+
+    /** Puts the fedora and the long coat on this figure (the rig and skin of this actor only). */
+    Actor dressMafioso() {
+        skin = Mafioso.dress(rig, skin);
+        return this;
     }
 
     /** Starts a frame: everything at rest, the hands loose. */
