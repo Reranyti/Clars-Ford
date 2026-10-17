@@ -14,6 +14,22 @@ final class PauseDialog {
     private final Rectangle yes = new Rectangle();
     private final Rectangle no = new Rectangle();
     private int hover = NONE;
+    private final String title, sub, yesLabel, noLabel;
+    private final float titleSize, subSize;
+
+    PauseDialog() {
+        this("\u0417\u0430\u043a\u0440\u044b\u0442\u044c \u043e\u043a\u043d\u043e?", "\u0442\u044b \u043f\u0440\u043e\u0441\u0442\u043e \u0441\u043b\u0430\u0431 \u0447\u0442\u043e \u0431\u044b \u043f\u0440\u043e\u0434\u0435\u0440\u0436\u0430\u0442\u0441\u044f?",
+                "\u0414\u0430", "\u041d\u0435\u0442", 0.06f, 0.032f);
+    }
+
+    PauseDialog(String title, String sub, String yesLabel, String noLabel, float titleSize, float subSize) {
+        this.title = title;
+        this.sub = sub;
+        this.yesLabel = yesLabel;
+        this.noLabel = noLabel;
+        this.titleSize = titleSize;
+        this.subSize = subSize;
+    }
 
     void move(int x, int y) {
         hover = yes.contains(x, y) ? YES : no.contains(x, y) ? NO : NONE;
@@ -37,14 +53,14 @@ final class PauseDialog {
         g.setStroke(new java.awt.BasicStroke(Math.max(2, h / 360f)));
         g.drawRect(px, py, pw, ph);
 
-        line(g, "Закрыть окно?", w / 2, py + (int) (ph * 0.27), h * 0.06f, new Color(0xE0C0FF));
-        line(g, "ты просто слаб что бы продержатся?", w / 2, py + (int) (ph * 0.46), h * 0.032f, new Color(0xB8A0D8));
+        line(g, title, w / 2, py + (int) (ph * 0.27), h * titleSize, new Color(0xE0C0FF));
+        line(g, sub, w / 2, py + (int) (ph * 0.46), h * subSize, new Color(0xB8A0D8));
 
         int bw = (int) (pw * 0.30), bh = (int) (ph * 0.22), by = py + (int) (ph * 0.62);
         yes.setBounds(px + (int) (pw * 0.16), by, bw, bh);
         no.setBounds(px + pw - (int) (pw * 0.16) - bw, by, bw, bh);
-        button(g, yes, "Да", hover == YES, h);
-        button(g, no, "Нет", hover == NO, h);
+        button(g, yes, yesLabel, hover == YES, h);
+        button(g, no, noLabel, hover == NO, h);
     }
 
     private static void button(Graphics2D g, Rectangle r, String text, boolean hot, int h) {

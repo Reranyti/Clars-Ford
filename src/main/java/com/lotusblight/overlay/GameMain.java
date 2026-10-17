@@ -33,7 +33,7 @@ public final class GameMain {
     private static final int FPS = 60;
     private static final Color CATCH_INPUT = new Color(0, 0, 0, 1);
 
-    private enum Phase { SONG1, LESSON, SONG2, INTERLUDE, SONG3, RESULTS, FINALE, DEFEAT }
+    private enum Phase { SONG1, LESSON, SONG2, INTERLUDE, SONG3, RESULTS, FINALE, DEFEAT, CONSENT }
 
     /** Icons taken off the desktop before the fight (by the exit scene), kept covered while it runs. */
     private static volatile DesktopSnapshot hiddenIcons;
@@ -552,6 +552,13 @@ public final class GameMain {
         private boolean paused;
         private boolean clipWas, briefWas;
         private final PauseDialog pauseDialog = new PauseDialog();
+        /** The Glitcher's question after the second song: he may look at the list of the player's games, and "no" loses the fight. */
+        private final PauseDialog consentDialog = new PauseDialog(
+                "\u0422\u044b \u043f\u0440\u043e\u0445\u043e\u0434\u0438\u0448\u044c \u0434\u0430\u043b\u044c\u0448\u0435 \u0442\u043e\u043b\u044c\u043a\u043e \u0435\u0441\u043b\u0438 \u044f \u0441\u043c\u043e\u0433\u0443",
+                "\u0437\u0430\u0433\u043b\u044f\u043d\u0443\u0442\u044c \u0432 \u0442\u0432\u043e\u0439 \u0441\u043f\u0438\u0441\u043e\u043a \u0438\u0433\u0440.",
+                "\u0417\u0430\u0433\u043b\u044f\u0434\u044b\u0432\u0430\u0439", "\u041d\u0435\u0442", 0.045f, 0.04f);
+        /** Whether the player said yes to that (nothing is read yet: the reading itself is not built). */
+        private boolean consented;
 
         void escape() {
             if (paused) { resumeGame(); return; }
@@ -579,6 +586,7 @@ public final class GameMain {
         }
 
         void hover(int x, int y) {
+            if (phase == Phase.CONSENT) consentDialog.move(x, y);
             if (paused) pauseDialog.move(x, y);
         }
 
@@ -626,6 +634,16 @@ public final class GameMain {
         }
 
         void click(int x, int y, int w, int h) {
+            if (phase == Phase.CONSENT) {
+                int hit = consentDialog.hit(x, y);
+                if (hit == PauseDialog.YES) {
+                    consented = true;
+                    end(Phase.RESULTS);
+                } else if (hit == PauseDialog.NO) {
+                    end(Phase.DEFEAT);
+                }
+                return;
+            }
             if (paused) {
                 int hit = pauseDialog.hit(x, y);
                 if (hit == PauseDialog.YES) leave(0);
@@ -732,7 +750,7 @@ public final class GameMain {
                             phase = Phase.INTERLUDE;
                             startInterludeMusic(0);
                         }
-                        else end(Phase.RESULTS);
+                        else end(Phase.CONSENT);
                     }
                 }
                 case INTERLUDE -> {
@@ -770,6 +788,11 @@ public final class GameMain {
                     }
                     if (!g3.alive()) end(Phase.DEFEAT);
                     else if (!leadIn && (g3.finished(t) || trackOver())) { song3Played = true; end(Phase.RESULTS); }
+                }
+                case CONSENT -> {
+                    g.setColor(Color.BLACK);
+                    g.fillRect(0, 0, w, h);
+                    consentDialog.render(g, w, h);
                 }
                 case RESULTS -> { results(g, w, h); closeWhenShown(); }
                 case FINALE -> {
