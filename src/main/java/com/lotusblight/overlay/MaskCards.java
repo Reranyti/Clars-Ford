@@ -63,6 +63,105 @@ final class MaskCards {
         }
     }
 
+    private static final java.util.Map<Integer, java.awt.image.BufferedImage> prints = new java.util.HashMap<>();
+
+    /** The picture printed on card number {@code i} (cards/card_i.png in the jar, supplied by the author), or null: then the card shows a placeholder. */
+    private static synchronized java.awt.image.BufferedImage print(int i) {
+        if (!prints.containsKey(i)) {
+            java.awt.image.BufferedImage img = null;
+            try (java.io.InputStream in = MaskCards.class.getResourceAsStream("/assets/lotusblight/overlay/cards/card_" + i + ".png")) {
+                if (in != null) img = pencil(javax.imageio.ImageIO.read(in));
+            } catch (java.io.IOException ignored) {
+                // no picture: the placeholder
+            }
+            prints.put(i, img);
+        }
+        return prints.get(i);
+    }
+
+    /**
+     * Turns a flat picture into something drawn with coloured pencils on cardboard: the white background goes (it is the paper), the colours are
+     * washed out and laid in as uneven hatching, and the outlines are graphite strokes. The result has transparency, so the cardboard shows through.
+     */
+    static java.awt.image.BufferedImage pencil(java.awt.image.BufferedImage src) {
+        int w = src.getWidth(), h = src.getHeight();
+        int[] px = src.getRGB(0, 0, w, h, null, 0, w);
+        boolean[] bg = new boolean[w * h];
+        java.util.ArrayDeque<Integer> q = new java.util.ArrayDeque<>();
+        for (int x = 0; x < w; x++) { q.add(x); q.add((h - 1) * w + x); }
+        for (int y = 0; y < h; y++) { q.add(y * w); q.add(y * w + w - 1); }
+        while (!q.isEmpty()) {                                                                  // the background: near-white, reached from the edge
+            int i = q.poll();
+            if (bg[i]) continue;
+            int c = px[i];
+            if (((c >> 24) & 255) > 20 && ((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255) < 3 * 232) continue;
+            bg[i] = true;
+            int x = i % w, y = i / w;
+            if (x > 0) q.add(i - 1);
+            if (x < w - 1) q.add(i + 1);
+            if (y > 0) q.add(i - w);
+            if (y < h - 1) q.add(i + w);
+        }
+        double[] lum = new double[w * h];
+        for (int i = 0; i < lum.length; i++) {
+            int c = px[i];
+            lum[i] = (0.3 * ((c >> 16) & 255) + 0.59 * ((c >> 8) & 255) + 0.11 * (c & 255)) / 255.0;
+        }
+        java.util.Random rnd = new java.util.Random(7);
+        java.awt.image.BufferedImage out = new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int i = y * w + x;
+                if (bg[i]) continue;
+                double gx = 0, gy = 0;
+                if (x > 0 && x < w - 1 && y > 0 && y < h - 1) {
+                    gx = lum[i + 1] - lum[i - 1];
+                    gy = lum[i + w] - lum[i - w];
+                }
+                double edge = Math.min(1, Math.hypot(gx, gy) * 3.2);
+                int c = px[i];
+                double r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255;
+                double dark = 1 - lum[i];
+                // coloured pencil: weaker than the picture, with diagonal hatching that thins out in the light parts
+                double hatch = ((x + y) % 5 < 2 ? 1.0 : 0.45) * (0.75 + 0.25 * rnd.nextDouble());
+                double cover = Math.min(1, (0.28 + 0.55 * (1 - lum[i] * 0.6)) * hatch);
+                r = 150 + (r - 150) * 0.8;
+                g = 140 + (g - 140) * 0.8;
+                b = 120 + (b - 120) * 0.8;
+                // graphite on the outlines, a little broken
+                double line = edge * (0.6 + 0.4 * rnd.nextDouble()) * (rnd.nextDouble() < 0.9 ? 1 : 0.3);
+                double a = Math.max(cover * 0.8, line);
+                double k = Math.min(1, line * 1.2);
+                int rr = (int) (r * (1 - k) + 45 * k), gg = (int) (g * (1 - k) + 42 * k), bb = (int) (b * (1 - k) + 48 * k);
+                // heavy darks (the eye patch, the mouth) stay dark graphite
+                if (dark > 0.85) { rr = 50; gg = 46; bb = 52; a = Math.max(a, 0.9 * (0.8 + 0.2 * rnd.nextDouble())); }
+                out.setRGB(x, y, ((int) (Math.max(0, Math.min(1, a)) * 255) << 24) | (rr << 16) | (gg << 8) | bb);
+            }
+        }
+        return out;
+    }
+
+    /** A hand-drawn frame in pencil round the print: doubled, wobbling, not quite closing. */
+    private static void pencilFrame(Graphics2D c, double pw, double ph, double u, int idx) {
+        java.util.Random rnd = new java.util.Random(idx * 31L + 5);
+        c.setColor(new Color(60, 54, 58, 170));
+        c.setStroke(new BasicStroke((float) Math.max(1.0, u * 0.18), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        for (int pass = 0; pass < 2; pass++) {
+            Path2D.Double p = new Path2D.Double();
+            double[][] corner = {{-pw / 2, -ph / 2}, {pw / 2, -ph / 2}, {pw / 2, ph / 2}, {-pw / 2, ph / 2}, {-pw / 2, -ph / 2}};
+            double jx = u * 0.2;
+            p.moveTo(corner[0][0] + (rnd.nextDouble() - 0.5) * jx * 3, corner[0][1] + (rnd.nextDouble() - 0.5) * jx * 3);
+            for (int e = 0; e < 4; e++) {
+                for (int s = 1; s <= 6; s++) {
+                    double f = s / 6.0;
+                    p.lineTo(corner[e][0] + (corner[e + 1][0] - corner[e][0]) * f + (rnd.nextDouble() - 0.5) * jx,
+                            corner[e][1] + (corner[e + 1][1] - corner[e][1]) * f + (rnd.nextDouble() - 0.5) * jx);
+                }
+            }
+            c.draw(p);
+        }
+    }
+
     /** One card, centred at (cx, cy), {@code u} the size of a skin unit there. */
     static void card(Graphics2D g, double cx, double cy, double u, int idx, double rot, double alpha) {
         double w = u * 8.4, h = u * 10.0;
@@ -77,6 +176,15 @@ final class MaskCards {
         c.fill(new RoundRectangle2D.Double(-w / 2, -h / 2, w, h, 6, 6));
         double m = u * 0.55;
         Color hue = HUES[Math.floorMod(idx, HUES.length)];
+        java.awt.image.BufferedImage pic = print(Math.floorMod(idx, NAMES.length));
+        if (pic != null) {                                                                      // the author's drawing, redone in pencil straight on the cardboard
+            double pw = w - 2 * m, ph = h - 2 * m, sc = Math.min(pw / pic.getWidth(), ph / pic.getHeight());
+            c.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            c.drawImage(pic, (int) (-pic.getWidth() * sc / 2), (int) (-pic.getHeight() * sc / 2), (int) (pic.getWidth() * sc), (int) (pic.getHeight() * sc), null);
+            pencilFrame(c, w - 2 * m, h - 2 * m, u, idx);
+            c.dispose();
+            return;
+        }
         c.setPaint(new GradientPaint(0, (float) (-h / 2), hue, 0, (float) (h / 2), hue.darker().darker()));
         c.fill(new Rectangle2D.Double(-w / 2 + m, -h / 2 + m, w - 2 * m, h - 2 * m));
         boolean light = hue.getRed() + hue.getGreen() + hue.getBlue() > 480;                    // the placeholder print: eyes, a mouth, the name
