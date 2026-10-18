@@ -47,3 +47,8 @@ art/music/third/
 
 # the author's story notes (Lotos Studio exports): never publish
 /art/episodes/
+
+# kept only on this computer
+/art/
+/shaderpack/
+/tools/
