@@ -1,5 +1,8 @@
 # Фазы заражения лотоса (обновлено под v1.1010)
 
+> **⚠ Скоро проект полностью изменится (теперь он называется Clars Ford, ранее Lotus Blight). Документ описывает старую версию и скоро устареет. / The project (now Clars Ford, formerly Lotus Blight) is about to change completely; this document describes the old version.**
+
+
 ## Фаза 1 — Цветение (0–23 блоков)
 
 Как и планировалось: одиночный лотос над водой, малый радиус (3 блока), только водные поверхности

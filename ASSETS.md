@@ -1,5 +1,8 @@
 # Ассеты Lotus Blight / Lotus Blight assets
 
+> **⚠ Скоро проект полностью изменится (теперь он называется Clars Ford, ранее Lotus Blight). Документ описывает старую версию и скоро устареет. / The project (now Clars Ford, formerly Lotus Blight) is about to change completely; this document describes the old version.**
+
+
 Список всего, что мод показывает и проигрывает: музыка, модели, анимации и текстуры, с тем, откуда
 они взялись. Где источник ещё не записан, стоит пометка **«уточнить»** — её заполняет автор
 ассета или команда.
