@@ -8,8 +8,8 @@
 > Всё, что было в прежнем описании (ветки, фазы заражения, команды), относится к старой версии и в
 > новой может исчезнуть или стать другим. Миры старой версии могут быть несовместимы с новой: делайте копии.
 
-Clars Ford — мод для Minecraft Forge 1.20.1. Бесплатный некоммерческий фанатский проект. Часть
-персонажей и событий — это альтернативная вселенная (AU) и хедканоны по мотивам игры DOORS от LSPLASH;
+Clars Ford — мод для Minecraft Forge 1.20.1. Бесплатный некоммерческий фанатский проект. Это
+не AU по DOORS, но в проекте присутствуют личности (персонажи), знакомые по игре DOORS от LSPLASH;
 мы не претендуем на авторство её персонажей и сюжета (подробнее — в [LICENSE](LICENSE) и [ASSETS.md](ASSETS.md)).
 
 ## Что в моде (планируется)
@@ -35,8 +35,8 @@ Clars Ford — мод для Minecraft Forge 1.20.1. Бесплатный нек
 > rewritten in a new way. Everything described for the old version (branches, infection phases,
 > commands) may disappear or change. Worlds of the old version may be incompatible with the new one: back them up.
 
-Clars Ford is a mod for Minecraft Forge 1.20.1. It is a free, non-commercial fan project. Some of its
-characters and events are an alternate universe (AU) and headcanons based on DOORS by LSPLASH; we do
+Clars Ford is a mod for Minecraft Forge 1.20.1. It is a free, non-commercial fan project. It is not an
+AU of DOORS, but some figures (characters) familiar from DOORS by LSPLASH are present in it; we do
 not claim authorship of its characters or story (see [LICENSE](LICENSE) and [ASSETS.md](ASSETS.md)).
 
 ## What's in the mod (planned)
