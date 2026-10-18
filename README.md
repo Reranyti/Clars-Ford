@@ -1,4 +1,18 @@
-# Lotus Blight / Порча лотоса
+# Clars Ford
+
+*Ранее — Lotus Blight / Порча лотоса. Formerly Lotus Blight.*
+
+> **⚠ Скоро проект полностью изменится / The project is about to change completely**
+>
+> Текущая версия мода («Порча лотоса», теперь Clars Ford) замораживается. Вместо неё готовится новая история: сюжет,
+> концовки, диалоги и меню будут переработаны с нуля, а игра станет сериями-эпизодами. Многое из
+> описанного ниже исчезнет или станет другим. Подробности автор раскроет позже.
+> Сохранения и миры текущей версии с новой могут быть несовместимы: делайте копии.
+>
+> The current version ("Lotus Blight", now Clars Ford) is being frozen. A new story is in the works: plot, endings,
+> dialogues and menus are being reworked from scratch, and the game becomes a series of episodes.
+> Much of what is described below will disappear or change. The author will share details later.
+> Worlds from the current version may not be compatible with the new one: back them up.
 
 **Русский** · [English](#english)
 
@@ -6,7 +20,7 @@
 по рекам, выходит на берег и превращает землю в болото лотоса — а вокруг него разворачивается
 история со своими ветками, событиями и персонажами.
 
-Lotus Blight — бесплатный некоммерческий фанатский проект. Часть персонажей и событий — это
+Clars Ford (бывший Lotus Blight) — бесплатный некоммерческий фанатский проект. Часть персонажей и событий — это
 альтернативная вселенная (AU) и хедканоны по мотивам игры DOORS от LSPLASH; мы не претендуем на
 авторство её персонажей и сюжета (подробнее — в [LICENSE](LICENSE) и [ASSETS.md](ASSETS.md)).
 
@@ -49,7 +63,7 @@ Lotus Blight — бесплатный некоммерческий фанатс�
 ## Установка
 
 **Проще всего — рекомендуемая сборка.** Архив `LotusBlight-Pack-<версия>.zip` из
-[релизов](https://github.com/Reranyti/Lotos-Outer/releases): распакуйте и запустите `install.bat`.
+[релизов](https://github.com/Reranyti/Clars-Ford/releases): распакуйте и запустите `install.bat`.
 Установщик спросит папку (стандартная `.minecraft` или любая другая), разложит моды, шейдеры и
 настройки, а моды, которые нельзя класть в архив, скачает с их официальных страниц. Forge 1.20.1
 (47.x) нужно поставить заранее.
@@ -120,7 +134,9 @@ jar-файлы появятся в `build/libs/`. Моды, с которыми 
 ---
 
 <a name="english"></a>
-# Lotus Blight
+# Clars Ford
+
+*Formerly Lotus Blight.*
 
 [Русский](#lotus-blight--порча-лотоса) · **English**
 
@@ -128,7 +144,7 @@ A Minecraft Forge 1.20.1 mod about a beautiful and dangerous lotus infection. It
 follows the rivers, climbs onto the shore and turns the land into lotus marsh — and around it runs a
 story with its own branches, events and characters.
 
-Lotus Blight is a free, non-commercial fan project. Some of its characters and events are an
+Clars Ford (formerly Lotus Blight) is a free, non-commercial fan project. Some of its characters and events are an
 alternate universe (AU) and headcanons inspired by DOORS by LSPLASH; we claim no authorship of its
 characters or story (see [LICENSE](LICENSE) and [ASSETS.md](ASSETS.md)).
 
@@ -172,7 +188,7 @@ characters or story (see [LICENSE](LICENSE) and [ASSETS.md](ASSETS.md)).
 ## Installing
 
 **The easy way is the recommended pack.** Get `LotusBlight-Pack-<version>.zip` from the
-[releases](https://github.com/Reranyti/Lotos-Outer/releases), unpack it and run `install.bat`. The
+[releases](https://github.com/Reranyti/Clars-Ford/releases), unpack it and run `install.bat`. The
 installer asks for a folder (the default `.minecraft` or any other), puts the mods, shader pack and
 settings in place, and downloads the mods that can't be bundled from their official pages. Install
 Forge 1.20.1 (47.x) first.
