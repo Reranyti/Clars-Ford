@@ -1,4 +1,4 @@
-# Биомы Lotus Blight (обновлено под v1.1010)
+# Биомы Clars Ford (обновлено под v1.1010)
 
 > **⚠ Скоро проект полностью изменится (теперь он называется Clars Ford, ранее Lotus Blight). Документ описывает старую версию и скоро устареет. / The project (now Clars Ford, formerly Lotus Blight) is about to change completely; this document describes the old version.**
 

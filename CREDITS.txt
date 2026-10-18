@@ -65,7 +65,7 @@ Forge Mod Loader downloads components from the Minecraft Coder Pack
 
 =========================================================================
 
-Third-party assets bundled with Lotus Blight:
+Third-party assets bundled with Clars Ford:
 
 * lily_pad block model (assets/minecraft/models/block/lily_pad.json) -
   created by UnduGT for the Undopia Patch.

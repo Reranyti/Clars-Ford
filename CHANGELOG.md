@@ -3,7 +3,7 @@
 > **⚠ Скоро проект полностью изменится (теперь он называется Clars Ford, ранее Lotus Blight). Документ описывает старую версию и скоро устареет. / The project (now Clars Ford, formerly Lotus Blight) is about to change completely; this document describes the old version.**
 
 
-Retroactive version report for the full rewrite of Lotus Blight. `mod_version`
+Retroactive version report for the full rewrite of Clars Ford. `mod_version`
 was left at `1.0.0` for the entire rewrite instead of being bumped per batch
 of work — this file assigns version numbers to the existing commit history
 after the fact, without rewriting any past commits. Going forward,
