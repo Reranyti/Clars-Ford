@@ -18,9 +18,6 @@ public final class LotusClientSetup {
     public static void registerRenderers(net.minecraftforge.client.event.EntityRenderersEvent.RegisterRenderers event) {
         event.registerBlockEntityRenderer(com.lotusblight.registry.ModBlockEntities.LOTUS_CROWN.get(), context -> new com.lotusblight.client.gecko.LotusCrownBlockRenderer());
         event.registerEntityRenderer(com.lotusblight.registry.ModEntities.WORLD_LOTUS_GUARDIAN.get(), net.minecraft.client.renderer.entity.WolfRenderer::new);
-        // Reuses ZombieRenderer's humanoid model/animation rig via a thin subclass (HonchoRenderer)
-        // that overrides the hardcoded vanilla zombie texture with Honcho's own original one.
-        event.registerEntityRenderer(com.lotusblight.registry.ModEntities.HONCHO.get(), com.lotusblight.client.HonchoGeoRenderer::new);
         event.registerEntityRenderer(com.lotusblight.registry.ModEntities.CREAK.get(), com.lotusblight.client.CreakRenderer::new);
     }
 

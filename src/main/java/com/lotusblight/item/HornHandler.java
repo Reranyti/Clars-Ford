@@ -2,7 +2,6 @@ package com.lotusblight.item;
 
 import com.lotusblight.LotusBlight;
 import com.lotusblight.data.LotusPlayerState;
-import com.lotusblight.entity.HonchoMeetingManager;
 import com.lotusblight.map.HornStatePacket;
 import com.lotusblight.map.NetworkHandler;
 import com.lotusblight.registry.ModItems;
@@ -87,20 +86,7 @@ public final class HornHandler {
         long now = level.getGameTime();
         long day = level.getDayTime() / 24000L;
         switch (slot) {
-            case 0 -> {
-                long ready = LotusPlayerState.hornHonchoReadyAt(player);
-                if (now < ready) {
-                    say(player, "Хончо ещё не отдышался: " + ((ready - now + 19) / 20) + " с");
-                    return;
-                }
-                if (HonchoMeetingManager.summonTo(player) == null) {
-                    say(player, "Хончо не откликается.");
-                    return;
-                }
-                LotusPlayerState.setHornHonchoReadyAt(player, now + HONCHO_COOLDOWN_TICKS);
-                horn(player, 1.3f);
-                say(player, "Рог зовёт. Хончо идёт к тебе.");
-            }
+            case 0 -> say(player, "Рог молчит: звать пока некого.");
             case 1 -> {
                 int left = LotusPlayerState.hornUsesLeft(player, day);
                 if (left <= 0) {

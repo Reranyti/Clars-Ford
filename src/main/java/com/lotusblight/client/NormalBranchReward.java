@@ -29,8 +29,6 @@ public final class NormalBranchReward {
             if (!player.getInventory().add(horn)) player.drop(horn, false);
             LotusPlayerState.markHornGiven(player);
             com.lotusblight.item.HornHandler.sync(player);
-            // And the portal opens in front of them again: Honcho, thrown out of it, is back in the game.
-            com.lotusblight.entity.HonchoReturnScene.begin(player);
         });
     }
 }

@@ -1,7 +1,6 @@
 package com.lotusblight.registry;
 
 import com.lotusblight.LotusBlight;
-import com.lotusblight.entity.HonchoEntity;
 import com.lotusblight.entity.WorldLotusGuardianWolf;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.entity.EntityType;
@@ -18,12 +17,6 @@ public final class ModEntities {
                     .sized(0.6f, 0.85f)
                     .fireImmune()
                     .build("world_lotus_guardian"));
-
-    public static final RegistryObject<EntityType<HonchoEntity>> HONCHO = ENTITY_TYPES.register(
-            "honcho",
-            () -> EntityType.Builder.of(HonchoEntity::new, MobCategory.MISC)
-                    .sized(0.6f, 1.95f)
-                    .build("honcho"));
 
     public static final RegistryObject<EntityType<com.lotusblight.entity.CreakEntity>> CREAK = ENTITY_TYPES.register(
             "creak",

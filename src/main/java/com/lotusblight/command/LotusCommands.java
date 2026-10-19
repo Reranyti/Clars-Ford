@@ -62,7 +62,6 @@ public final class LotusCommands {
                 .then(blackHeartCommands())
                 .then(borderCommands())
                 .then(reputationCommands())
-                .then(honchoCommands())
                 .then(Commands.literal("compat").executes(ctx -> compatReport(ctx.getSource())))
                 .then(Commands.literal("book").executes(ctx -> openCommandBook(ctx.getSource()))));
     }
@@ -101,13 +100,7 @@ public final class LotusCommands {
                         .then(Commands.argument("player", EntityArgument.player())
                                 .executes(ctx -> reportEvent(ctx.getSource(), "Проклятая / заготовка", com.lotusblight.event.CursedEvents.skeleton(EntityArgument.getPlayer(ctx, "player"), false)))
                                 .then(Commands.literal("force")
-                                        .executes(ctx -> reportEvent(ctx.getSource(), "Проклятая / заготовка", com.lotusblight.event.CursedEvents.skeleton(EntityArgument.getPlayer(ctx, "player"), true)))))))
-                .then(Commands.literal("honcho").then(Commands.literal("skeleton")
-                        .executes(ctx -> reportEvent(ctx.getSource(), "Хончо / заготовка", com.lotusblight.event.HonchoEvents.skeleton(ctx.getSource().getPlayerOrException(), false)))
-                        .then(Commands.argument("player", EntityArgument.player())
-                                .executes(ctx -> reportEvent(ctx.getSource(), "Хончо / заготовка", com.lotusblight.event.HonchoEvents.skeleton(EntityArgument.getPlayer(ctx, "player"), false)))
-                                .then(Commands.literal("force")
-                                        .executes(ctx -> reportEvent(ctx.getSource(), "Хончо / заготовка", com.lotusblight.event.HonchoEvents.skeleton(EntityArgument.getPlayer(ctx, "player"), true)))))));
+                                        .executes(ctx -> reportEvent(ctx.getSource(), "Проклятая / заготовка", com.lotusblight.event.CursedEvents.skeleton(EntityArgument.getPlayer(ctx, "player"), true)))))));
     }
 
     private static int reportEvent(CommandSourceStack source, String name, com.lotusblight.event.EventResult result) {
@@ -147,11 +140,6 @@ public final class LotusCommands {
                 }))
                 .then(Commands.literal("exit").executes(ctx -> {
                     com.lotusblight.branch.NormalBranchExit.start(ctx.getSource().getPlayerOrException());
-                    return 1;
-                }))
-                .then(Commands.literal("return").executes(ctx -> {
-                    // The scene after the fight: the portal, Honcho thrown out of it, the hand, going along.
-                    com.lotusblight.entity.HonchoReturnScene.begin(ctx.getSource().getPlayerOrException());
                     return 1;
                 }))
                 .then(Commands.literal("lock").executes(ctx -> {
@@ -619,151 +607,6 @@ public final class LotusCommands {
             source.sendSuccess(() -> Component.literal(line), false);
         }
         return com.lotusblight.compat.CompatHooks.ALL.size();
-    }
-
-    // ---- /lotus honcho ... (Honcho testing - see HonchoMeetingManager) -------------------------
-
-    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> honchoCommands() {
-        var scene = Commands.literal("scene");
-        String[] sceneNames = {"none", "offer", "happy", "pat", "pray"};
-        int[] sceneIds = {com.lotusblight.entity.HonchoEntity.SCENE_NONE, com.lotusblight.entity.HonchoEntity.SCENE_OFFER_HAND,
-                com.lotusblight.entity.HonchoEntity.SCENE_HAPPY, com.lotusblight.entity.HonchoEntity.SCENE_PAT,
-                com.lotusblight.entity.HonchoEntity.SCENE_PRAY};
-        for (int i = 0; i < sceneNames.length; i++) {
-            String name = sceneNames[i];
-            int id = sceneIds[i];
-            scene.then(Commands.literal(name).executes(ctx -> honchoScene(ctx.getSource(), name, id)));
-        }
-        return Commands.literal("honcho")
-                .then(Commands.literal("info")
-                        .executes(ctx -> honchoInfo(ctx.getSource(), ctx.getSource().getPlayerOrException()))
-                        .then(Commands.argument("player", EntityArgument.player())
-                                .executes(ctx -> honchoInfo(ctx.getSource(), EntityArgument.getPlayer(ctx, "player")))))
-                .then(Commands.literal("spawn").executes(ctx -> honchoSpawn(ctx.getSource())))
-                .then(Commands.literal("tp").executes(ctx -> honchoTeleport(ctx.getSource())))
-                .then(Commands.literal("meeting")
-                        .executes(ctx -> honchoMeeting(ctx.getSource(), ctx.getSource().getPlayerOrException()))
-                        .then(Commands.argument("player", EntityArgument.player())
-                                .executes(ctx -> honchoMeeting(ctx.getSource(), EntityArgument.getPlayer(ctx, "player")))))
-                .then(Commands.literal("cancel")
-                        .executes(ctx -> honchoCancel(ctx.getSource(), ctx.getSource().getPlayerOrException()))
-                        .then(Commands.argument("player", EntityArgument.player())
-                                .executes(ctx -> honchoCancel(ctx.getSource(), EntityArgument.getPlayer(ctx, "player")))))
-                .then(Commands.literal("assistant")
-                        .executes(ctx -> honchoAssistant(ctx.getSource(), ctx.getSource().getPlayerOrException()))
-                        .then(Commands.argument("player", EntityArgument.player())
-                                .executes(ctx -> honchoAssistant(ctx.getSource(), EntityArgument.getPlayer(ctx, "player")))))
-                .then(scene)
-                .then(Commands.literal("reset")
-                        .then(Commands.literal("world").executes(ctx -> honchoResetWorld(ctx.getSource())))
-                        .then(Commands.literal("player")
-                                .then(Commands.argument("player", EntityArgument.player())
-                                        .executes(ctx -> honchoResetPlayer(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"))))));
-    }
-
-    private static int honchoInfo(CommandSourceStack source, ServerPlayer player) {
-        var data = com.lotusblight.data.HonchoSavedData.get(source.getServer().overworld());
-        var honcho = com.lotusblight.entity.HonchoMeetingManager.findLoadedHoncho(source.getServer());
-        String where = honcho == null
-                ? (data.honchoId() == null ? "нет" : "не загружен")
-                : honcho.blockPosition().toShortString() + " в " + honcho.level().dimension().location()
-                        + ", здоровье " + Math.round(honcho.getHealth()) + "/" + Math.round(honcho.getMaxHealth());
-        source.sendSuccess(() -> Component.literal(String.format("Мир: появлялся=%b, ушёл навсегда=%b, Хончо: %s",
-                data.isSpawned(), data.isGone(), where)), false);
-        source.sendSuccess(() -> Component.literal(String.format(
-                "%s: ветка=%s, StarFall=%b, встреча=%b (ждёт=%b, идёт сейчас=%b), вопрос помощника=%b (ждёт ответа=%b), флаконов=%d, ближе=%b",
-                player.getGameProfile().getName(), branchName(LotusPlayerState.getDialogueBranch(player)),
-                LotusPlayerState.hasSeenStarFall(player), LotusPlayerState.hasMetHoncho(player),
-                LotusPlayerState.isHonchoMeetingPending(player), com.lotusblight.entity.HonchoMeetingManager.isInMeeting(player),
-                LotusPlayerState.hasAskedHonchoAssistant(player), LotusPlayerState.isHonchoAssistantPending(player),
-                LotusPlayerState.getHonchoDependencyCount(player), LotusPlayerState.isHonchoCloser(player))), false);
-        return 1;
-    }
-
-    private static int honchoSpawn(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        ServerPlayer player = source.getPlayerOrException();
-        var honcho = com.lotusblight.entity.HonchoMeetingManager.summonTo(player);
-        if (honcho == null) {
-            source.sendFailure(Component.literal("Не вышло: Хончо ушёл навсегда или сейчас в сцене (см. /lotus honcho info)."));
-            return 0;
-        }
-        source.sendSuccess(() -> Component.literal("Хончо стоит рядом: " + honcho.blockPosition().toShortString()), true);
-        return 1;
-    }
-
-    private static int honchoTeleport(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        ServerPlayer player = source.getPlayerOrException();
-        var honcho = com.lotusblight.entity.HonchoMeetingManager.findLoadedHoncho(source.getServer());
-        if (honcho == null) {
-            source.sendFailure(Component.literal("Хончо сейчас не загружен ни в одном измерении."));
-            return 0;
-        }
-        player.teleportTo((ServerLevel) honcho.level(), honcho.getX(), honcho.getY(), honcho.getZ(), player.getYRot(), player.getXRot());
-        source.sendSuccess(() -> Component.literal("Телепортирован к Хончо: " + honcho.blockPosition().toShortString()), true);
-        return 1;
-    }
-
-    private static int honchoMeeting(CommandSourceStack source, ServerPlayer player) {
-        String error = com.lotusblight.entity.HonchoMeetingManager.forceMeeting(player);
-        if (error != null) {
-            source.sendFailure(Component.literal(error));
-            return 0;
-        }
-        source.sendSuccess(() -> Component.literal("Встреча с Хончо запущена для " + player.getGameProfile().getName()), true);
-        return 1;
-    }
-
-    private static int honchoCancel(CommandSourceStack source, ServerPlayer player) {
-        if (!com.lotusblight.entity.HonchoMeetingManager.isInMeeting(player)) {
-            source.sendFailure(Component.literal(player.getGameProfile().getName() + " сейчас не во встрече."));
-            return 0;
-        }
-        com.lotusblight.entity.HonchoMeetingManager.cancel(player);
-        source.sendSuccess(() -> Component.literal("Встреча прервана для " + player.getGameProfile().getName()), true);
-        return 1;
-    }
-
-    private static int honchoAssistant(CommandSourceStack source, ServerPlayer player) {
-        LotusPlayerState.markAskedHonchoAssistant(player);
-        LotusPlayerState.setHonchoAssistantPending(player, true);
-        NetworkHandler.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new com.lotusblight.map.ShowHonchoAssistantPacket());
-        source.sendSuccess(() -> Component.literal("Сцена помощника показана " + player.getGameProfile().getName()), true);
-        return 1;
-    }
-
-    private static int honchoScene(CommandSourceStack source, String name, int scene) {
-        var honcho = com.lotusblight.entity.HonchoMeetingManager.findLoadedHoncho(source.getServer());
-        if (honcho == null) {
-            source.sendFailure(Component.literal("Хончо сейчас не загружен (/lotus honcho spawn)."));
-            return 0;
-        }
-        if (honcho.isInMeeting()) {
-            source.sendFailure(Component.literal("Хончо сейчас во встрече - анимацию ведёт сцена."));
-            return 0;
-        }
-        honcho.setScene(scene);
-        source.sendSuccess(() -> Component.literal("Анимация Хончо: " + name), false);
-        return 1;
-    }
-
-    private static int honchoResetWorld(CommandSourceStack source) {
-        for (ServerPlayer player : source.getServer().getPlayerList().getPlayers()) {
-            com.lotusblight.entity.HonchoMeetingManager.cancel(player);
-        }
-        var honcho = com.lotusblight.entity.HonchoMeetingManager.findLoadedHoncho(source.getServer());
-        if (honcho != null) honcho.discard();
-        com.lotusblight.entity.HonchoReturnScene.cancelAll(source.getServer());
-        com.lotusblight.data.HonchoSavedData.get(source.getServer().overworld()).reset();
-        source.sendSuccess(() -> Component.literal("Хончо забыт миром: следующий StarFall или встреча создадут его заново."), true);
-        return 1;
-    }
-
-    private static int honchoResetPlayer(CommandSourceStack source, ServerPlayer player) {
-        com.lotusblight.entity.HonchoMeetingManager.cancel(player);
-        LotusPlayerState.resetHonchoProgress(player);
-        com.lotusblight.entity.HonchoRewardManager.refresh(player);
-        source.sendSuccess(() -> Component.literal("Прогресс с Хончо сброшен для " + player.getGameProfile().getName()), true);
-        return 1;
     }
 
     // ---- /lotus book (opens the command reference GUI, see LotusCommandBookScreen) -------------

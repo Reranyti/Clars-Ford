@@ -28,8 +28,6 @@ public final class ClientSessionReset {
         StarFallOverlay.reset();
         WorldLotusLectureOverlay.reset();
         InnerVoiceOverlay.reset();
-        HonchoAssistantOverlay.reset();
-        HonchoMeetingCutscene.reset();
         LotusChaseOverlay.stopAll();
         TraitorBossMusicOverlay.stop();
         NormalBranchFreeze.reset();
