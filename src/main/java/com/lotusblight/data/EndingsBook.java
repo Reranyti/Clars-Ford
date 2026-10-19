@@ -26,19 +26,10 @@ public final class EndingsBook {
 
     /** Every ending, in the order the menu lists them. Names that are not decided yet are left out of the lang files on purpose. */
     public static final List<Ending> ALL = List.of(
-            new Ending("war", "Война", "war"),
-            new Ending("alliance", "Альянс", "alliance"),
-            new Ending("neutral", "Нейтральная", "neutral"),
-            new Ending("traitor", "Предатель", null),                      // split off from the alliance; icon not given yet
-            new Ending("guiding", "Путеводная", "moon"),                  // the guiding line: moonlight
-            new Ending("starlight", "Звёздный свет", "star"),                // starlight
-            new Ending("mischievous", "Озорной свет", "mischief"),          // the mischievous light
+            new Ending("traitor", "Предатель", null),                      // to be rewritten as an alternative branch with the new characters and events
             new Ending("cursed", "Проклятая", "glitch"),                 // the cursed branch: the glitch light
-            new Ending("true", "Истинная", "four"),                     // the true line next to it: all four lights
-            new Ending("ash", "Хончо", "honcho"),                    // the Honcho line
-            new Ending("dismembered", "Расчленён.", "dismembered"),   // a static-noise figure tearing out of a TV / the red light
-            new Ending("chromo", "Хромо", "chromo"),
-            new Ending("truth", "Твоя истина и твоя власть", null));        // the 13th; icon and path not given yet                // the rainbow / black-and-white diamond
+            new Ending("true", "Истинная", "four"),                     // the true line: break the seal, gather all the Architects (the Lights)
+            new Ending("chromo", "Хромо", "chromo"));
 
     /** For now every ending and every step is open, so the whole story can be looked through; switch off when the menu goes live. */
     public static final boolean UNLOCK_ALL = true;

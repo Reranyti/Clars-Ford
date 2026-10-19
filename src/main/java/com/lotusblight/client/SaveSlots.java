@@ -85,16 +85,7 @@ final class SaveSlots {
      * inside level.dat). Null while nothing is chosen. Only the two open lines are named here; the hidden ones are never shown.
      */
     private static String endingOf(CompoundTag data) {
-        try {
-            CompoundTag state = data.getCompound("Player").getCompound("ForgeData").getCompound("LotusBlightState");
-            return switch (state.getInt("DialogueBranch")) {
-                case 1 -> "war";
-                case 2 -> "alliance";
-                default -> null;
-            };
-        } catch (RuntimeException e) {
-            return null;
-        }
+        return null;                                          // the old war/alliance lines are gone; the new endings are marked here when they exist
     }
 
     /** Starts a new world in an empty slot (the game's own creation, with the settings of the episode). */

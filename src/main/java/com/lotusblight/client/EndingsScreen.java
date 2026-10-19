@@ -17,7 +17,7 @@ import net.minecraft.resources.ResourceLocation;
  */
 public final class EndingsScreen extends Screen {
     /** How many endings there are. */
-    private static final int SLOTS = 13;
+    private static final int SLOTS = EndingsBook.ALL.size();
     private static final int NODE_RADIUS = 16;
     private static final int RAY_SHORT = 26;
 
