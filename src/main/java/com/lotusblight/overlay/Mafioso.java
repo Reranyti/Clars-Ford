@@ -8,7 +8,7 @@ package com.lotusblight.overlay;
 final class Mafioso {
     private static final int ROWS = 64 + 8;
     /** Pixels of the extra rows: where each colour sits on the skin (u, v). */
-    private static final int FELT = 0, BAND = 1, COAT = 2, LINING = 3, COLLAR = 4, SHINE = 5, SUIT = 6, SHIRT = 7, TIE = 8, LAPEL = 9, SHOE = 10, PIPE = 11;
+    private static final int FELT = 0, BAND = 1, COAT = 2, LINING = 3, COLLAR = 4, SHINE = 5, SUIT = 6, SHIRT = 7, TIE = 8, LAPEL = 9, SHOE = 10, PIPE = 11, SEAT = 12, FRAME = 13;
     private static final int[] COLOURS = {
             0xFF16141C,          // the felt of the hat
             0xFF6A1020,          // the hat band
@@ -21,7 +21,9 @@ final class Mafioso {
             0xFF8A1428,          // the tie
             0xFF2E2E3A,          // the lapels
             0xFF0C0C10,          // the shoes
-            0xFFC8C2D6};         // the piping along the edges of the cloak
+            0xFFC8C2D6,          // the piping along the edges of the cloak
+            0xFF2A2630,          // the chair's leather
+            0xFF6A707E};         // the chair's metal
 
     private Mafioso() {
     }
@@ -67,6 +69,23 @@ final class Mafioso {
         }
         box(rig, Rig15.Joint.R_FOOT, -4.35, 0, -2.4, 0.35, 3.0, 3.4, SHOE, SHOE);     // the shoes, longer at the toe
         box(rig, Rig15.Joint.L_FOOT, -0.35, 0, -2.4, 4.35, 3.0, 3.4, SHOE, SHOE);
+    }
+
+    /** An office chair under the figure (on the waist joint, so that it stays with him): the seat, the high back, the arms, the post and the star of the base. */
+    static void chair(Rig15 rig) {
+        Rig15.Joint j = Rig15.Joint.LOWER_TORSO;
+        box(rig, j, -5.6, 7.8, -4.8, 5.6, 9.6, 5.4, SEAT, SEAT);                        // the seat
+        box(rig, j, -5.0, 9.6, -5.6, 5.0, 25.0, -3.4, SEAT, SEAT);                      // the high back
+        box(rig, j, -6.8, 11.0, -3.6, -5.6, 12.0, 4.2, SEAT, SEAT);                     // the arms
+        box(rig, j, 5.6, 11.0, -3.6, 6.8, 12.0, 4.2, SEAT, SEAT);
+        box(rig, j, -6.8, 9.6, -1.0, -6.2, 11.0, 0.0, FRAME, FRAME);
+        box(rig, j, 6.2, 9.6, -1.0, 6.8, 11.0, 0.0, FRAME, FRAME);
+        box(rig, j, -0.9, 3.0, -0.9, 0.9, 7.8, 0.9, FRAME, FRAME);                      // the post
+        for (int k = 0; k < 5; k++) {                                                   // the star of the base
+            double a = k * 2 * Math.PI / 5 + 0.3;
+            double ex = Math.cos(a) * 6.5, ez = Math.sin(a) * 6.5;
+            box(rig, j, Math.min(0, ex) - 0.5, 2.4, Math.min(0, ez) - 0.5, Math.max(0, ex) + 0.5, 3.4, Math.max(0, ez) + 0.5, FRAME, FRAME);
+        }
     }
 
     private static void hat(Rig15 rig) {

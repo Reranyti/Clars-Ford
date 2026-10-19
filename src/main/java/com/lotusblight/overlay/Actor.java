@@ -62,6 +62,12 @@ final class Actor {
         return this;
     }
 
+    /** Puts an office chair under this figure (needs {@link #dressMafioso} first, for the colours). */
+    Actor sitInChair() {
+        Mafioso.chair(rig);
+        return this;
+    }
+
     /** Starts a frame: everything at rest, the hands loose. */
     /** The author's own turns of the finger joints (the editor's pose keys), laid over the shaped fingers at the end of the frame: the turn and how much it counts. */
     final Quat[] keyedRot = new Quat[Rig15.N];

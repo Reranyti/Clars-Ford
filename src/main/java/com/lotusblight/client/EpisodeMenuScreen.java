@@ -5,14 +5,11 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.OptionsScreen;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.gui.screens.worldselection.SelectWorldScreen;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
-import net.minecraft.world.level.storage.LevelSummary;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
 
@@ -29,7 +26,7 @@ public final class EpisodeMenuScreen extends Screen {
     /** One hanging button: where its thread starts, which finger holds it, how it swings. */
     private static final class Hanging {
         GlassButton button;
-        int hand, finger;                   // finger 1..3 (index..ring); "Продолжить" is held by the thumbs
+        int hand, finger;                   // finger 1..3 (index..ring)
         float ax, ay;                       // the thread's end on the button, GUI pixels (top centre)
         float swing, omega, phase;
         boolean broken;
@@ -54,7 +51,6 @@ public final class EpisodeMenuScreen extends Screen {
     private long lastFrame = openedAt;
     private Runnable pending;
     private long pendingAt;
-    private Hanging continueButton;
     private boolean shotTaken;
     private boolean simulated;
 
@@ -77,7 +73,8 @@ public final class EpisodeMenuScreen extends Screen {
         hang("Концовки", GlassButton.Kind.ENDINGS, "endings", 1, 3, 0.885f, 0.74f, bw, bh, () -> minecraft.setScreen(new EndingsScreen(this)));
         hang("Настройки", GlassButton.Kind.SETTINGS, "settings", 1, 2, 0.760f, 0.84f, bw, bh, () -> minecraft.setScreen(new OptionsScreen(this, minecraft.options)));
         hang("Выйти из симуляции", GlassButton.Kind.EXIT, "power", 1, 1, 0.670f, 0.74f, bw, bh, () -> minecraft.stop());
-        continueButton = hang("Продолжить", GlassButton.Kind.CONTINUE, "play", 0, 0, 0.500f, 0.80f, (int) (w * 0.17f), (int) (h * 0.10f), this::continueGame);
+        threadOn[0] = 0f;                                    // the thumbs hold nothing: there is no "continue" button
+        threadOn[4] = 0f;
         addRenderableWidget(new GlassButton(GlassButton.Kind.SMALL, (int) (w * 0.01), (int) (h * 0.92), (int) (w * 0.08), (int) (h * 0.055), "Меню", null, b -> EpisodeMenu.openVanilla()));
     }
 
@@ -102,10 +99,6 @@ public final class EpisodeMenuScreen extends Screen {
         hg.broken = true;
         hg.button.broken = true;
         threadOn[hg.hand * 4 + hg.finger] = 0f;
-        if (hg == continueButton) {
-            threadOn[0] = 0f;
-            threadOn[4] = 0f;
-        }
         Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.GLASS_BREAK, 1.1f, 0.5f));
         long now = Util.getMillis();
         int x0 = hg.button.getX(), y0 = hg.button.getY(), bw = hg.button.getWidth(), bh = hg.button.getHeight();
@@ -129,7 +122,6 @@ public final class EpisodeMenuScreen extends Screen {
         pressAt[i] = Util.getMillis();
         for (Hanging hg : hangings) {
             if (hg.hand == hand && hg.finger == finger) hg.omega += 1.1f * (hand == 0 ? 1 : -1);
-            if (hg == continueButton && finger == 0) hg.omega += 0.6f * (hand == 0 ? 1 : -1);
         }
         Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK.value(), 0.6f + 0.1f * finger, 0.35f));
     }
@@ -149,24 +141,6 @@ public final class EpisodeMenuScreen extends Screen {
             }
         }
         return super.mouseClicked(mx, my, button);
-    }
-
-    private void continueGame() {
-        Minecraft mc = Minecraft.getInstance();
-        try {
-            mc.getLevelSource().loadLevelSummaries(mc.getLevelSource().findLevelCandidates()).thenAccept(list -> {
-                LevelSummary last = list.stream().max(Comparator.comparingLong(LevelSummary::getLastPlayed)).orElse(null);
-                mc.execute(() -> {
-                    if (last == null || last.isDisabled()) {
-                        mc.setScreen(new SelectWorldScreen(this));
-                    } else {
-                        mc.createWorldOpenFlows().loadLevel(this, last.getLevelId());
-                    }
-                });
-            });
-        } catch (Exception e) {
-            mc.setScreen(new SelectWorldScreen(this));
-        }
     }
 
     @Override
@@ -216,12 +190,6 @@ public final class EpisodeMenuScreen extends Screen {
                 if (p >= 0 && p < 1) pull = 6f * (float) Math.sin(Math.PI * p);
             }
             setThreadEnd(hg.hand * 4 + hg.finger, hg.ax, hg.ay - pull);
-        }
-        if (continueButton != null) {
-            // "Продолжить" hangs from both thumbs: one thread to each top corner
-            float lx = continueButton.button.getX() + 10, rx = continueButton.button.getX() + continueButton.button.getWidth() - 10;
-            setThreadEnd(0, lx, continueButton.ay);
-            setThreadEnd(4, rx, continueButton.ay);
         }
 
         for (int hand = 0; hand < 2; hand++) {

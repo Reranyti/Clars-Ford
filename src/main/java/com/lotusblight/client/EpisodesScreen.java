@@ -153,7 +153,8 @@ public final class EpisodesScreen extends Screen {
         }
         if (leaving >= 0 && lt >= 1f) {
             int n = leaving;
-            minecraft.setScreen(new EpisodeScreen(this, n, NAMES[n - 1], STATUS[n - 1]));
+            if (STATUS[n - 1] != Status.NONE) minecraft.setScreen(new SaveSlotsScreen(this, n, NAMES[n - 1]));       // an episode that is being made opens its files
+            else minecraft.setScreen(new EpisodeScreen(this, n, NAMES[n - 1], STATUS[n - 1]));
             return;
         }
 
