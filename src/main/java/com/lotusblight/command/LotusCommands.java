@@ -64,6 +64,9 @@ public final class LotusCommands {
                 .then(reputationCommands())
                 .then(Commands.literal("story")
                         .executes(ctx -> storyInfo(ctx.getSource()))
+                        .then(Commands.literal("dialogue")
+                                .then(Commands.argument("id", com.mojang.brigadier.arguments.StringArgumentType.word())
+                                        .executes(ctx -> storyDialogue(ctx.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "id")))))
                         .then(Commands.literal("lotus")
                                 .then(Commands.literal("on").executes(ctx -> storyLotus(ctx.getSource(), true)))
                                 .then(Commands.literal("off").executes(ctx -> storyLotus(ctx.getSource(), false)))))
@@ -620,6 +623,12 @@ public final class LotusCommands {
         var st = com.lotusblight.story.StoryState.get(source.getServer());
         source.sendSuccess(() -> Component.literal("Эпизод " + st.episode() + ", бит «" + st.beat() + "»; Лотос в мире: "
                 + (com.lotusblight.story.StoryState.lotusShown(source.getServer()) ? "показан" : "скрыт")), false);
+        return 1;
+    }
+
+    private static int storyDialogue(CommandSourceStack source, String id) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        NetworkHandler.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new com.lotusblight.map.OpenDialoguePacket(id));
         return 1;
     }
 

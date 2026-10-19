@@ -1,0 +1,49 @@
+{
+  "id": "test",
+  "lines": [
+    {
+      "intro": "rey"
+    },
+    {
+      "speaker": "rey",
+      "expr": "neutral",
+      "text": "Тестовая реплика: проверка экрана диалога, имени и лица."
+    },
+    {
+      "speaker": "treyld",
+      "expr": "angry",
+      "text": "Тестовая реплика: другой герой, другое лицо, мигание и рот во время печати текста."
+    },
+    {
+      "speaker": "rey",
+      "expr": "happy",
+      "text": "Тестовый выбор.",
+      "choices": [
+        {
+          "text": "Первый вариант",
+          "next": "a",
+          "flag": "test_a"
+        },
+        {
+          "text": "Второй вариант",
+          "next": "b",
+          "flag": "test_b"
+        }
+      ]
+    },
+    {
+      "label": "a",
+      "speaker": "treyld",
+      "expr": "sad",
+      "text": "Тестовый ответ на первый вариант.",
+      "end": true
+    },
+    {
+      "label": "b",
+      "speaker": "treyld",
+      "expr": "scared",
+      "text": "Тестовый ответ на второй вариант.",
+      "end": true
+    }
+  ]
+}

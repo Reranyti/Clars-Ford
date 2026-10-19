@@ -1,0 +1,8 @@
+{
+  "id": "delantor",
+  "name": "Делантор",
+  "skin": "lotusblight:textures/character/delantor.png",
+  "color": "C79BE6",
+  "floor": null,
+  "placeholder_skin": true
+}

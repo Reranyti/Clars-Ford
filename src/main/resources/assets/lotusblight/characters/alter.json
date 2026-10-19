@@ -1,0 +1,8 @@
+{
+  "id": "alter",
+  "name": "Альтер",
+  "skin": "lotusblight:textures/character/alter.png",
+  "color": "E6E3B0",
+  "floor": null,
+  "placeholder_skin": true
+}
