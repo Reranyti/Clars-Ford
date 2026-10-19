@@ -133,6 +133,7 @@ public class InfectionSpreadEngine {
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        if (!com.lotusblight.story.StoryState.lotusShown(event.getServer())) return;
         MinecraftServer server = event.getServer();
 
         if (server.getTickCount() % 10 == 0) {

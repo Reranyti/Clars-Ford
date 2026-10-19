@@ -60,6 +60,7 @@ public final class GuaranteedSpawnManager {
 
     @SubscribeEvent
     public void onChunkLoad(ChunkEvent.Load event) {
+        if (event.getLevel() instanceof net.minecraft.server.level.ServerLevel sl && !com.lotusblight.story.StoryState.lotusShown(sl.getServer())) return;
         if (!event.isNewChunk() || !(event.getLevel() instanceof ServerLevel level)) return;
         if (RANDOM.nextInt(CHUNK_SAMPLE_RATE) != 0) return;
         ChunkPos chunk = event.getChunk().getPos();
@@ -70,6 +71,7 @@ public final class GuaranteedSpawnManager {
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        if (!com.lotusblight.story.StoryState.lotusShown(event.getServer())) return;
         MinecraftServer server = event.getServer();
         LotusLib.process(PENDING_WATER_CHECKS, LotusLib.MAX_WORLDGEN_TASKS_PER_TICK, queued -> {
             ServerLevel level = server.getLevel(queued.dimension());

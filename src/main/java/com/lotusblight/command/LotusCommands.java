@@ -62,6 +62,11 @@ public final class LotusCommands {
                 .then(blackHeartCommands())
                 .then(borderCommands())
                 .then(reputationCommands())
+                .then(Commands.literal("story")
+                        .executes(ctx -> storyInfo(ctx.getSource()))
+                        .then(Commands.literal("lotus")
+                                .then(Commands.literal("on").executes(ctx -> storyLotus(ctx.getSource(), true)))
+                                .then(Commands.literal("off").executes(ctx -> storyLotus(ctx.getSource(), false)))))
                 .then(Commands.literal("compat").executes(ctx -> compatReport(ctx.getSource())))
                 .then(Commands.literal("book").executes(ctx -> openCommandBook(ctx.getSource()))));
     }
@@ -607,6 +612,21 @@ public final class LotusCommands {
             source.sendSuccess(() -> Component.literal(line), false);
         }
         return com.lotusblight.compat.CompatHooks.ALL.size();
+    }
+
+    // ---- /lotus story: where the world is in the plot (see StoryState) ------------------------
+
+    private static int storyInfo(CommandSourceStack source) {
+        var st = com.lotusblight.story.StoryState.get(source.getServer());
+        source.sendSuccess(() -> Component.literal("Эпизод " + st.episode() + ", бит «" + st.beat() + "»; Лотос в мире: "
+                + (com.lotusblight.story.StoryState.lotusShown(source.getServer()) ? "показан" : "скрыт")), false);
+        return 1;
+    }
+
+    private static int storyLotus(CommandSourceStack source, boolean shown) {
+        com.lotusblight.story.StoryState.get(source.getServer()).showLotus(shown);
+        source.sendSuccess(() -> Component.literal(shown ? "Лотос теперь появляется в мире." : "Лотос скрыт: новые очаги не появляются и не растут."), true);
+        return 1;
     }
 
     // ---- /lotus book (opens the command reference GUI, see LotusCommandBookScreen) -------------

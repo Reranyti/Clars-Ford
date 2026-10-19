@@ -66,6 +66,7 @@ public class MeteoriteSpreadEngine {
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        if (!com.lotusblight.story.StoryState.lotusShown(event.getServer())) return;
         MinecraftServer server = event.getServer();
         if (server.getTickCount() % LotusConfig.SPREAD_INTERVAL_TICKS.get() != 0) return;
         for (ServerLevel level : server.getAllLevels()) {

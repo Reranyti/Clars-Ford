@@ -46,6 +46,7 @@ public final class MossyGlandWorldgen {
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        if (!com.lotusblight.story.StoryState.lotusShown(event.getServer())) return;
         if (giveUp) return;
         MinecraftServer server = event.getServer();
         if (server.getTickCount() % PROBE_INTERVAL_TICKS != 0) return;
