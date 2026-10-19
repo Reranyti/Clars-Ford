@@ -1,9 +1,0 @@
-{
-  "type": "minecraft:smelting",
-  "ingredient": {
-    "item": "lotusblight:meteorite_stone"
-  },
-  "result": "lotusblight:meteorite_ingot",
-  "experience": 2.0,
-  "cookingtime": 200
-}
