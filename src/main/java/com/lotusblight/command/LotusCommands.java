@@ -61,6 +61,11 @@ public final class LotusCommands {
                 .then(reputationCommands())
                 .then(Commands.literal("story")
                         .executes(ctx -> storyInfo(ctx.getSource()))
+                        .then(Commands.literal("beats").executes(ctx -> storyBeats(ctx.getSource())))
+                        .then(Commands.literal("beat")
+                                .then(Commands.argument("id", com.mojang.brigadier.arguments.StringArgumentType.word())
+                                        .executes(ctx -> storySetBeat(ctx.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "id")))))
+                        .then(Commands.literal("next").executes(ctx -> storyNext(ctx.getSource())))
                         .then(Commands.literal("dialogue")
                                 .then(Commands.argument("id", com.mojang.brigadier.arguments.StringArgumentType.word())
                                         .executes(ctx -> storyDialogue(ctx.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "id")))))
@@ -498,6 +503,39 @@ public final class LotusCommands {
         var st = com.lotusblight.story.StoryState.get(source.getServer());
         source.sendSuccess(() -> Component.literal("Эпизод " + st.episode() + ", бит «" + st.beat() + "»; Лотос в мире: "
                 + (com.lotusblight.story.StoryState.lotusShown(source.getServer()) ? "показан" : "скрыт")), false);
+        return 1;
+    }
+
+    private static int storyBeats(CommandSourceStack source) {
+        var cur = com.lotusblight.story.StoryState.get(source.getServer()).beat();
+        StringBuilder sb = new StringBuilder();
+        for (var b : com.lotusblight.story.Beats.all()) {
+            sb.append("\n").append(b.id().equals(cur) ? "> " : "  ").append(b.episode()).append(": ").append(b.id()).append(" - ").append(b.title());
+        }
+        source.sendSuccess(() -> Component.literal("Биты сюжета:" + sb), false);
+        return 1;
+    }
+
+    private static int storySetBeat(CommandSourceStack source, String id) {
+        var beat = com.lotusblight.story.Beats.find(id);
+        if (beat.isEmpty()) {
+            source.sendFailure(Component.literal("Такого бита нет, список: /lotus story beats"));
+            return 0;
+        }
+        com.lotusblight.story.StoryState.get(source.getServer()).setBeat(beat.get().episode(), id);
+        source.sendSuccess(() -> Component.literal("Бит: " + beat.get().title()), true);
+        return 1;
+    }
+
+    private static int storyNext(CommandSourceStack source) {
+        var st = com.lotusblight.story.StoryState.get(source.getServer());
+        var next = com.lotusblight.story.Beats.next(st.beat());
+        if (next.isEmpty()) {
+            source.sendFailure(Component.literal("Дальше сюжета нет: это последний написанный бит."));
+            return 0;
+        }
+        st.setBeat(next.get().episode(), next.get().id());
+        source.sendSuccess(() -> Component.literal("Бит: " + next.get().title()), true);
         return 1;
     }
 

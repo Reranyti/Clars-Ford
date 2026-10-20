@@ -89,12 +89,6 @@ public final class LotusShootBlock extends LotusBloomBlock {
             level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
             return;
         }
-        if (random.nextInt(AMBIENT_CHANCE) != 0) return;
-        Player nearest = level.getNearestPlayer(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, AMBIENT_PLAYER_RADIUS, false);
-        if (nearest == null) return;
-        var outbreak = com.lotusblight.data.OutbreakSavedData.get(level).nearestOutbreak(pos, 64.0, false);
-        int phase = outbreak != null ? outbreak.phase() : 1;
-        var lines = com.lotusblight.dialogue.LotusDialogueLibrary.shootLines(phase);
-        nearest.displayClientMessage(Component.literal(lines.get(random.nextInt(lines.size()))), true);
+        // the shoots no longer talk: the old Lotus voice lines were cut with the conversation
     }
 }
