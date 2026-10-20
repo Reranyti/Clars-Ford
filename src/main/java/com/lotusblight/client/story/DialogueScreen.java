@@ -40,6 +40,11 @@ public final class DialogueScreen extends Screen {
         return false;
     }
 
+    /** The index of the line being shown (for tests). */
+    public int index() {
+        return index;
+    }
+
     private DialogueScript.Line line() {
         return script.line(index);
     }
@@ -55,7 +60,7 @@ public final class DialogueScreen extends Screen {
     }
 
     private void sendFlag(String flag) {
-        if (flag != null && !flag.isBlank()) NetworkHandler.CHANNEL.sendToServer(new StoryFlagPacket(flag));
+        if (flag != null && !flag.isBlank() && Minecraft.getInstance().getConnection() != null) NetworkHandler.CHANNEL.sendToServer(new StoryFlagPacket(flag));
     }
 
     private int typed(DialogueScript.Line l) {
