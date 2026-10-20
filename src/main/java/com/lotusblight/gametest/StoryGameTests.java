@@ -58,6 +58,22 @@ public final class StoryGameTests {
     }
 
     @GameTest(template = "honcho_arena", timeoutTicks = 20, batch = "story")
+    public static void diaryKeepsEntries(GameTestHelper helper) {
+        StoryState state = StoryState.get(helper.getLevel().getServer());
+        java.util.List<String> before = state.diary();
+        state.clearDiary();
+        if (!state.addDiary("a") || !state.addDiary("b")) helper.fail("a new entry was refused");
+        if (state.addDiary("a")) helper.fail("an entry was added twice");
+        if (!state.diary().equals(java.util.List.of("a", "b"))) helper.fail("entries are not in the order they were added: " + state.diary());
+        CompoundTag tag = state.save(new CompoundTag());
+        if (tag.getList("Diary", net.minecraft.nbt.Tag.TAG_STRING).size() != 2) helper.fail("the diary was not saved");
+        if (com.lotusblight.story.Diary.entryFor("minecraft:no_such_thing") != null) helper.fail("an unknown target has an entry");
+        state.clearDiary();
+        for (String id : before) state.addDiary(id);
+        helper.succeed();
+    }
+
+    @GameTest(template = "honcho_arena", timeoutTicks = 20, batch = "story")
     public static void dreamWorldExists(GameTestHelper helper) {
         if (DreamWorld.level(helper.getLevel().getServer()) == null) helper.fail("the dream dimension was not loaded");
         helper.succeed();

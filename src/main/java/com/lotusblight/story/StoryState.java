@@ -22,6 +22,7 @@ public final class StoryState extends SavedData {
     private String beat = "wake_up";
     private boolean lotusShown;
     private final Set<String> flags = new LinkedHashSet<>();
+    private final java.util.List<String> diary = new java.util.ArrayList<>();
 
     private StoryState() {}
 
@@ -62,12 +63,31 @@ public final class StoryState extends SavedData {
         if (flags.add(flag)) setDirty();
     }
 
+    /** The ids of the diary entries the player has, in the order they were found. */
+    public java.util.List<String> diary() {
+        return java.util.List.copyOf(diary);
+    }
+
+    /** Adds a diary entry; false if the player already has it. */
+    public boolean addDiary(String id) {
+        if (diary.contains(id)) return false;
+        diary.add(id);
+        setDirty();
+        return true;
+    }
+
+    public void clearDiary() {
+        diary.clear();
+        setDirty();
+    }
+
     private static StoryState load(CompoundTag tag) {
         StoryState s = new StoryState();
         s.episode = Math.max(1, tag.getInt("Episode"));
         if (tag.contains("Beat")) s.beat = tag.getString("Beat");
         s.lotusShown = tag.getBoolean("LotusShown");
         for (Tag t : tag.getList("Flags", Tag.TAG_STRING)) s.flags.add(t.getAsString());
+        for (Tag t : tag.getList("Diary", Tag.TAG_STRING)) s.diary.add(t.getAsString());
         return s;
     }
 
@@ -79,6 +99,9 @@ public final class StoryState extends SavedData {
         ListTag list = new ListTag();
         for (String f : flags) list.add(StringTag.valueOf(f));
         tag.put("Flags", list);
+        ListTag dl = new ListTag();
+        for (String d : diary) dl.add(StringTag.valueOf(d));
+        tag.put("Diary", dl);
         return tag;
     }
 }

@@ -122,5 +122,7 @@
   "advancements.lotusblight.honcho_trip_rude.title": "Грубиян",
   "advancements.lotusblight.honcho_trip_rude.description": "Встать самому, не приняв руку Хончо",
   "advancements.lotusblight.honcho_trip_pleased.title": "Босс счастлив",
-  "advancements.lotusblight.honcho_trip_pleased.description": "Принять руку Хончо при первой встрече"
+  "advancements.lotusblight.honcho_trip_pleased.description": "Принять руку Хончо при первой встрече",
+  "item.lotusblight.scanner": "Сканер",
+  "key.lotusblight.open_diary": "Открыть дневник"
 }

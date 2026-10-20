@@ -35,6 +35,7 @@ public final class ModItems {
     // --- Calendar crafting chain: paper_stack (9 paper) + iron_rim (3 iron) -> calendar (see recipes) ---
     public static final RegistryObject<Item> PAPER_STACK = ITEMS.register("paper_stack", () -> new Item(new Item.Properties().stacksTo(64)));
     public static final RegistryObject<Item> IRON_RIM = ITEMS.register("iron_rim", () -> new Item(new Item.Properties().stacksTo(64)));
+    public static final RegistryObject<Item> SCANNER = ITEMS.register("scanner", () -> new com.lotusblight.item.ScannerItem(new Item.Properties().stacksTo(1)));
     public static final RegistryObject<Item> CALENDAR = ITEMS.register("calendar", () -> new Item(new Item.Properties().stacksTo(1)));
     // --- Discoverable lore item: rare guardian drop, not handed out at spawn (see GuardianManager#onDrops) ---
     public static final RegistryObject<Item> SCIENTIST_PAGE = ITEMS.register("scientist_page", () -> new ScientistPageItem(new Item.Properties()));

@@ -59,6 +59,7 @@ public final class NetworkHandler {
         CHANNEL.registerMessage(id++, ChromoStatePacket.class, ChromoStatePacket::encode, ChromoStatePacket::decode, ChromoStatePacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, OpenDialoguePacket.class, OpenDialoguePacket::encode, OpenDialoguePacket::decode, OpenDialoguePacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, StoryFlagPacket.class, StoryFlagPacket::encode, StoryFlagPacket::decode, StoryFlagPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        CHANNEL.registerMessage(id++, DiarySyncPacket.class, DiarySyncPacket::encode, DiarySyncPacket::decode, DiarySyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, ChromoRequestPacket.class, ChromoRequestPacket::encode, ChromoRequestPacket::decode, ChromoRequestPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(id++, NormalBranchExitPacket.class, NormalBranchExitPacket::encode, NormalBranchExitPacket::decode, NormalBranchExitPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
     }

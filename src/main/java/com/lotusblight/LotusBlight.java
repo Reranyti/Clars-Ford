@@ -49,6 +49,7 @@ public class LotusBlight {
                 output.accept(ModItems.LOTUS_WIKI.get());
                 output.accept(ModItems.PAPER_STACK.get());
                 output.accept(ModItems.IRON_RIM.get());
+                output.accept(ModItems.SCANNER.get());
                 output.accept(ModItems.CALENDAR.get());
                 output.accept(ModItems.SCIENTIST_PAGE.get());
                 output.accept(ModItems.LOTUS_MIMIC_ITEM.get());

@@ -68,6 +68,12 @@ public final class LotusCommands {
                         .then(Commands.literal("next").executes(ctx -> storyNext(ctx.getSource())))
                         .then(Commands.literal("dream").executes(ctx -> storyDream(ctx.getSource(), true)))
                         .then(Commands.literal("wake").executes(ctx -> storyDream(ctx.getSource(), false)))
+                        .then(Commands.literal("diary")
+                                .then(Commands.literal("list").executes(ctx -> storyDiary(ctx.getSource(), "list", null)))
+                                .then(Commands.literal("clear").executes(ctx -> storyDiary(ctx.getSource(), "clear", null)))
+                                .then(Commands.literal("add")
+                                        .then(Commands.argument("id", com.mojang.brigadier.arguments.StringArgumentType.word())
+                                                .executes(ctx -> storyDiary(ctx.getSource(), "add", com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "id"))))))
                         .then(Commands.literal("dialogue")
                                 .then(Commands.argument("id", com.mojang.brigadier.arguments.StringArgumentType.word())
                                         .executes(ctx -> storyDialogue(ctx.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "id")))))
@@ -547,6 +553,28 @@ public final class LotusCommands {
         if (!ok) {
             source.sendFailure(Component.literal("Измерение снов не найдено."));
             return 0;
+        }
+        return 1;
+    }
+
+    private static int storyDiary(CommandSourceStack source, String action, String id) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        var st = com.lotusblight.story.StoryState.get(source.getServer());
+        switch (action) {
+            case "add" -> {
+                if (!id.matches("[a-z0-9_]{1,48}")) {
+                    source.sendFailure(Component.literal("Имя записи: только a-z, 0-9 и _."));
+                    return 0;
+                }
+                boolean added = com.lotusblight.story.Diary.add(player, id);
+                source.sendSuccess(() -> Component.literal(added ? "Запись добавлена: " + id : "Такая запись уже есть."), true);
+            }
+            case "clear" -> {
+                st.clearDiary();
+                com.lotusblight.story.Diary.sync(player);
+                source.sendSuccess(() -> Component.literal("Дневник очищен."), true);
+            }
+            default -> source.sendSuccess(() -> Component.literal("Записи дневника: " + st.diary()), false);
         }
         return 1;
     }

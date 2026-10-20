@@ -25,6 +25,13 @@ public final class LotusKeybinds {
             "key.categories.lotusblight"
     );
 
+    public static final KeyMapping OPEN_DIARY = new KeyMapping(
+            "key.lotusblight.open_diary",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_J,
+            "key.categories.lotusblight"
+    );
+
     private LotusKeybinds() {}
 
     @Mod.EventBusSubscriber(modid = LotusBlight.MODID, value = net.minecraftforge.api.distmarker.Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.MOD)
@@ -33,6 +40,7 @@ public final class LotusKeybinds {
         public static void register(RegisterKeyMappingsEvent event) {
             event.register(TOGGLE_MAP);
             event.register(OPEN_ATLAS);
+            event.register(OPEN_DIARY);
         }
     }
 
@@ -50,6 +58,9 @@ public final class LotusKeybinds {
             // already uses for Enter for the same reason.
             while (TOGGLE_MAP.consumeClick()) {
                 if (mc.screen == null) LotusHudOverlay.toggleHidden();
+            }
+            while (OPEN_DIARY.consumeClick()) {
+                if (mc.screen == null) com.lotusblight.client.story.DiaryScreen.open();
             }
             while (OPEN_ATLAS.consumeClick()) {
                 if (mc.screen == null) mc.setScreen(new LotusAtlasScreen());
