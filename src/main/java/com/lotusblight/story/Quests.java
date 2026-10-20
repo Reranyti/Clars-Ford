@@ -21,8 +21,8 @@ import java.util.Map;
 
 /**
  * The quests: story, ordinary and special ones. A quest is given (by the story, a command or a dialogue) and finishes when its condition
- * is met: a story flag is set or a diary entry is written. Conditions are in {@code data/lotusblight/quests/quests.json}
- * ({@code "<id>": {"flag": "<flag>"}} or {@code {"diary": "<entry id>"}}); the texts and the kind (story / regular / special) are client
+ * is met: every goal is done (a goal is a story flag set or a diary entry written). Goals are in {@code data/lotusblight/quests/quests.json}
+ * ({@code "<id>": {"goals": [{"flag": "<flag>"}, {"diary": "<entry id>", "hidden": true}]}}, or one condition written straight in the entry); the texts and the kind (story / regular / special) are client
  * files {@code assets/lotusblight/quests/<id>.json}. The author writes the quests; the mechanism decides no story.
  */
 @Mod.EventBusSubscriber(modid = LotusBlight.MODID)
@@ -69,22 +69,55 @@ public final class Quests {
         return ok;
     }
 
-    /** Finishes the given quests whose condition is met; call after a flag is set or a diary entry is written. */
+    /** The goals of a quest: its "goals" list, or the single condition written straight in the quest's entry. */
+    private static java.util.List<JsonObject> goals(JsonObject c) {
+        java.util.List<JsonObject> out = new java.util.ArrayList<>();
+        if (c == null) return out;
+        if (c.has("goals") && c.get("goals").isJsonArray()) {
+            for (JsonElement e : c.getAsJsonArray("goals")) if (e.isJsonObject()) out.add(e.getAsJsonObject());
+        } else if (c.has("flag") || c.has("diary")) {
+            out.add(c);
+        }
+        return out;
+    }
+
+    private static boolean met(StoryState st, JsonObject g) {
+        return (g.has("flag") && st.has(g.get("flag").getAsString())) || (g.has("diary") && st.diary().contains(g.get("diary").getAsString()));
+    }
+
+    /**
+     * The state of every goal of a quest, one letter each: D done, T to do, U unknown (a goal marked "hidden" stays unknown until the goals
+     * before it are done). A quest without goals has an empty string.
+     */
+    public static String goalStates(StoryState st, String questId) {
+        StringBuilder sb = new StringBuilder();
+        boolean earlierAllDone = true;
+        for (JsonObject g : goals(conditions().get(questId))) {
+            boolean done = met(st, g);
+            boolean hidden = g.has("hidden") && g.get("hidden").getAsBoolean();
+            sb.append(done ? 'D' : (hidden && !earlierAllDone ? 'U' : 'T'));
+            if (!done) earlierAllDone = false;
+        }
+        return sb.toString();
+    }
+
+    /** Finishes the given quests whose goals are all met and refreshes the client; call after a flag is set or a diary entry is written. */
     public static void check(ServerPlayer player) {
         StoryState st = StoryState.get(player.getServer());
         for (var q : st.quests().entrySet().stream().filter(e -> !e.getValue()).map(Map.Entry::getKey).toList()) {
-            JsonObject c = conditions().get(q);
-            if (c == null) continue;
-            boolean met = (c.has("flag") && st.has(c.get("flag").getAsString()))
-                    || (c.has("diary") && st.diary().contains(c.get("diary").getAsString()));
-            if (met) complete(player, q);
+            var gs = goals(conditions().get(q));
+            if (!gs.isEmpty() && gs.stream().allMatch(g -> met(st, g))) complete(player, q);
         }
+        sync(player);
     }
 
     public static void sync(ServerPlayer player) {
-        Map<String, Boolean> q = StoryState.get(player.getServer()).quests();
-        NetworkHandler.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new QuestSyncPacket(new java.util.ArrayList<>(q.keySet()),
-                new java.util.ArrayList<>(q.values())));
+        StoryState st = StoryState.get(player.getServer());
+        Map<String, Boolean> q = st.quests();
+        java.util.List<String> states = new java.util.ArrayList<>();
+        for (String id : q.keySet()) states.add(goalStates(st, id));
+        NetworkHandler.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player),
+                new QuestSyncPacket(new java.util.ArrayList<>(q.keySet()), new java.util.ArrayList<>(q.values()), states));
     }
 
     @SubscribeEvent

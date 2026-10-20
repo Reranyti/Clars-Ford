@@ -94,6 +94,27 @@ public final class StoryGameTests {
     }
 
     @GameTest(template = "honcho_arena", timeoutTicks = 20, batch = "story")
+    public static void questGoalStates(GameTestHelper helper) {
+        StoryState state = StoryState.get(helper.getLevel().getServer());
+        var diary = state.diary();
+        state.clearDiary();
+        // the test quest has two goals: the diary entry "test", then the flag "test_b" (hidden until the first goal is done)
+        String s0 = com.lotusblight.story.Quests.goalStates(state, "test");
+        if (!s0.equals("TU")) helper.fail("nothing done: expected TU, got " + s0);
+        state.addDiary("test");
+        String s1 = com.lotusblight.story.Quests.goalStates(state, "test");
+        if (!s1.equals("DT")) helper.fail("first goal done: expected DT, got " + s1);
+        boolean hadFlag = state.has("test_b");
+        state.set("test_b");
+        String s2 = com.lotusblight.story.Quests.goalStates(state, "test");
+        if (!s2.equals("DD")) helper.fail("both goals done: expected DD, got " + s2);
+        if (!com.lotusblight.story.Quests.goalStates(state, "no_such_quest").isEmpty()) helper.fail("an unknown quest has goals");
+        state.clearDiary();
+        for (String d : diary) state.addDiary(d);
+        helper.succeed();
+    }
+
+    @GameTest(template = "honcho_arena", timeoutTicks = 20, batch = "story")
     public static void dreamWorldExists(GameTestHelper helper) {
         if (DreamWorld.level(helper.getLevel().getServer()) == null) helper.fail("the dream dimension was not loaded");
         helper.succeed();

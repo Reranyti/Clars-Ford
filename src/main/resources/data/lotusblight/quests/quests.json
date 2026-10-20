@@ -1,6 +1,14 @@
 {
-  "_comment": "quest id -> its condition: {\"flag\": \"<story flag>\"} or {\"diary\": \"<diary entry id>\"}. The author fills this in.",
+  "_comment": "quest id -> its goals: {\"goals\": [{\"flag\": \"<story flag>\"}, {\"diary\": \"<diary entry id>\", \"hidden\": true}]} (a goal marked hidden shows as unknown until the goals before it are done). The author fills this in.",
   "test": {
-    "diary": "test"
+    "goals": [
+      {
+        "diary": "test"
+      },
+      {
+        "flag": "test_b",
+        "hidden": true
+      }
+    ]
   }
 }
