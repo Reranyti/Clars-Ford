@@ -74,6 +74,15 @@ public final class LotusCommands {
                                 .then(Commands.literal("add")
                                         .then(Commands.argument("id", com.mojang.brigadier.arguments.StringArgumentType.word())
                                                 .executes(ctx -> storyDiary(ctx.getSource(), "add", com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "id"))))))
+                        .then(Commands.literal("quest")
+                                .then(Commands.literal("list").executes(ctx -> storyQuest(ctx.getSource(), "list", null)))
+                                .then(Commands.literal("clear").executes(ctx -> storyQuest(ctx.getSource(), "clear", null)))
+                                .then(Commands.literal("start")
+                                        .then(Commands.argument("id", com.mojang.brigadier.arguments.StringArgumentType.word())
+                                                .executes(ctx -> storyQuest(ctx.getSource(), "start", com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "id")))))
+                                .then(Commands.literal("done")
+                                        .then(Commands.argument("id", com.mojang.brigadier.arguments.StringArgumentType.word())
+                                                .executes(ctx -> storyQuest(ctx.getSource(), "done", com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "id"))))))
                         .then(Commands.literal("dialogue")
                                 .then(Commands.argument("id", com.mojang.brigadier.arguments.StringArgumentType.word())
                                         .executes(ctx -> storyDialogue(ctx.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "id")))))
@@ -575,6 +584,32 @@ public final class LotusCommands {
                 source.sendSuccess(() -> Component.literal("Дневник очищен."), true);
             }
             default -> source.sendSuccess(() -> Component.literal("Записи дневника: " + st.diary()), false);
+        }
+        return 1;
+    }
+
+    private static int storyQuest(CommandSourceStack source, String action, String id) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        var st = com.lotusblight.story.StoryState.get(source.getServer());
+        if (id != null && !id.matches("[a-z0-9_]{1,48}")) {
+            source.sendFailure(Component.literal("Имя задания: только a-z, 0-9 и _."));
+            return 0;
+        }
+        switch (action) {
+            case "start" -> {
+                boolean ok = com.lotusblight.story.Quests.start(player, id);
+                source.sendSuccess(() -> Component.literal(ok ? "Задание выдано: " + id : "Такое задание уже есть."), true);
+            }
+            case "done" -> {
+                boolean ok = com.lotusblight.story.Quests.complete(player, id);
+                source.sendSuccess(() -> Component.literal(ok ? "Задание выполнено: " + id : "Задание не выдано или уже выполнено."), true);
+            }
+            case "clear" -> {
+                st.clearQuests();
+                com.lotusblight.story.Quests.sync(player);
+                source.sendSuccess(() -> Component.literal("Задания очищены."), true);
+            }
+            default -> source.sendSuccess(() -> Component.literal("Задания: " + st.quests()), false);
         }
         return 1;
     }

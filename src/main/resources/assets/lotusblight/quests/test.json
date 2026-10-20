@@ -1,0 +1,5 @@
+{
+  "kind": "regular",
+  "title": "Тестовое задание",
+  "text": "Заглушка: проверка заданий. Настоящие задания пишет автор, файл quests/<имя>.json (kind: story, regular или special)."
+}

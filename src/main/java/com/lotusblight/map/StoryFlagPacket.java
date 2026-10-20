@@ -28,6 +28,7 @@ public class StoryFlagPacket {
             var player = ctx.getSender();
             if (player == null || !packet.flag.matches("[a-z0-9_]{1,48}")) return;
             StoryState.get(player.getServer()).set(packet.flag);
+            com.lotusblight.story.Quests.check(player);
         });
         ctx.setPacketHandled(true);
     }

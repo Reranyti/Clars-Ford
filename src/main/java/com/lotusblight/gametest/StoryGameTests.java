@@ -74,6 +74,26 @@ public final class StoryGameTests {
     }
 
     @GameTest(template = "honcho_arena", timeoutTicks = 20, batch = "story")
+    public static void questsKeepTheirState(GameTestHelper helper) {
+        StoryState state = StoryState.get(helper.getLevel().getServer());
+        var before = new java.util.LinkedHashMap<>(state.quests());
+        state.clearQuests();
+        if (!state.startQuest("q1") || state.startQuest("q1")) helper.fail("a quest can be given only once");
+        if (state.completeQuest("nope")) helper.fail("a quest that was never given was completed");
+        if (!state.completeQuest("q1") || state.completeQuest("q1")) helper.fail("a quest can be completed only once");
+        state.startQuest("q2");
+        CompoundTag tag = state.save(new CompoundTag());
+        var list = tag.getList("Quests", net.minecraft.nbt.Tag.TAG_STRING);
+        if (list.size() != 2 || !list.getString(0).equals("q1:done") || !list.getString(1).equals("q2")) helper.fail("the quests were saved wrong: " + list);
+        state.clearQuests();
+        for (var e : before.entrySet()) {
+            state.startQuest(e.getKey());
+            if (e.getValue()) state.completeQuest(e.getKey());
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "honcho_arena", timeoutTicks = 20, batch = "story")
     public static void dreamWorldExists(GameTestHelper helper) {
         if (DreamWorld.level(helper.getLevel().getServer()) == null) helper.fail("the dream dimension was not loaded");
         helper.succeed();

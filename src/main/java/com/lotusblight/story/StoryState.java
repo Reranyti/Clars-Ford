@@ -23,6 +23,7 @@ public final class StoryState extends SavedData {
     private boolean lotusShown;
     private final Set<String> flags = new LinkedHashSet<>();
     private final java.util.List<String> diary = new java.util.ArrayList<>();
+    private final java.util.Map<String, Boolean> quests = new java.util.LinkedHashMap<>();   // id -> done
 
     private StoryState() {}
 
@@ -76,6 +77,33 @@ public final class StoryState extends SavedData {
         return true;
     }
 
+    /** The quests the player has (in the order they were given) and whether each is done. */
+    public java.util.Map<String, Boolean> quests() {
+        return java.util.Collections.unmodifiableMap(quests);
+    }
+
+    /** Gives a quest; false if the player already has it (done or not). */
+    public boolean startQuest(String id) {
+        if (quests.containsKey(id)) return false;
+        quests.put(id, false);
+        setDirty();
+        return true;
+    }
+
+    /** Marks a given quest done; false if it was not given or is already done. */
+    public boolean completeQuest(String id) {
+        Boolean done = quests.get(id);
+        if (done == null || done) return false;
+        quests.put(id, true);
+        setDirty();
+        return true;
+    }
+
+    public void clearQuests() {
+        quests.clear();
+        setDirty();
+    }
+
     public void clearDiary() {
         diary.clear();
         setDirty();
@@ -88,6 +116,11 @@ public final class StoryState extends SavedData {
         s.lotusShown = tag.getBoolean("LotusShown");
         for (Tag t : tag.getList("Flags", Tag.TAG_STRING)) s.flags.add(t.getAsString());
         for (Tag t : tag.getList("Diary", Tag.TAG_STRING)) s.diary.add(t.getAsString());
+        for (Tag t : tag.getList("Quests", Tag.TAG_STRING)) {
+            String v = t.getAsString();                                   // "id" or "id:done"
+            boolean done = v.endsWith(":done");
+            s.quests.put(done ? v.substring(0, v.length() - 5) : v, done);
+        }
         return s;
     }
 
@@ -102,6 +135,9 @@ public final class StoryState extends SavedData {
         ListTag dl = new ListTag();
         for (String d : diary) dl.add(StringTag.valueOf(d));
         tag.put("Diary", dl);
+        ListTag ql = new ListTag();
+        for (var q : quests.entrySet()) ql.add(StringTag.valueOf(q.getValue() ? q.getKey() + ":done" : q.getKey()));
+        tag.put("Quests", ql);
         return tag;
     }
 }

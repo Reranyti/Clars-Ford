@@ -53,7 +53,10 @@ public final class Diary {
     /** Adds an entry for the player and tells the client. Returns false if it was already there. */
     public static boolean add(ServerPlayer player, String id) {
         boolean added = StoryState.get(player.getServer()).addDiary(id);
-        if (added) sync(player);
+        if (added) {
+            sync(player);
+            Quests.check(player);
+        }
         return added;
     }
 
