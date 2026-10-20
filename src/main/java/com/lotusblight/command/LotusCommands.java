@@ -66,6 +66,8 @@ public final class LotusCommands {
                                 .then(Commands.argument("id", com.mojang.brigadier.arguments.StringArgumentType.word())
                                         .executes(ctx -> storySetBeat(ctx.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "id")))))
                         .then(Commands.literal("next").executes(ctx -> storyNext(ctx.getSource())))
+                        .then(Commands.literal("dream").executes(ctx -> storyDream(ctx.getSource(), true)))
+                        .then(Commands.literal("wake").executes(ctx -> storyDream(ctx.getSource(), false)))
                         .then(Commands.literal("dialogue")
                                 .then(Commands.argument("id", com.mojang.brigadier.arguments.StringArgumentType.word())
                                         .executes(ctx -> storyDialogue(ctx.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "id")))))
@@ -536,6 +538,16 @@ public final class LotusCommands {
         }
         st.setBeat(next.get().episode(), next.get().id());
         source.sendSuccess(() -> Component.literal("Бит: " + next.get().title()), true);
+        return 1;
+    }
+
+    private static int storyDream(CommandSourceStack source, boolean enter) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        boolean ok = enter ? com.lotusblight.story.DreamWorld.enter(player) : com.lotusblight.story.DreamWorld.wake(player);
+        if (!ok) {
+            source.sendFailure(Component.literal("Измерение снов не найдено."));
+            return 0;
+        }
         return 1;
     }
 
