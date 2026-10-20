@@ -1,8 +1,6 @@
 package com.lotusblight.spread;
 
 import com.lotusblight.LotusConfig;
-import com.lotusblight.advancement.GuardianPackTamedTrigger;
-import com.lotusblight.advancement.GuardianTamedTrigger;
 import com.lotusblight.data.LotusPlayerState;
 import com.lotusblight.data.OutbreakRecord;
 import com.lotusblight.data.OutbreakSavedData;
@@ -358,20 +356,16 @@ public final class GuardianManager {
     private static void triggerBetrayal(ServerPlayer player) {
         if (!LotusPlayerState.betrayAlliance(player)) return;
 
-        com.lotusblight.advancement.AllianceGuardianSlaughterTrigger.INSTANCE.trigger(player);
         LotusPlayerState.setHeardWorldLotusLecture(player);
-        com.lotusblight.advancement.WorldLotusLectureTrigger.INSTANCE.trigger(player);
         ChatOverhaulBranchColor.applyBranchColor(player, LotusPlayerState.BRANCH_RESISTANCE);
         NetworkHandler.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new PlayerStateSyncPacket(
                 LotusPlayerState.getDialogueBranch(player), LotusPlayerState.hasFullMapVisibility(player),
                 LotusPlayerState.hasHeardInnerVoice(player), LotusPlayerState.hasSeenGuardian(player),
                 LotusPlayerState.getAllianceCleanseUses(player)));
 
-        NetworkHandler.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new com.lotusblight.map.ShowWorldLotusLecturePacket());
         player.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, INCINERATION_DURATION_TICKS, 0));
         player.setSecondsOnFire(INCINERATION_DURATION_TICKS / 20);
         player.hurt(player.damageSources().onFire(), INCINERATION_DAMAGE);
-        com.lotusblight.boss.TraitorBossFight.scheduleStart(player, INCINERATION_DURATION_TICKS);
     }
 
     private static final int ALLIANCE_CLEANSE_LOTONIRIYA_USES = 20;
@@ -470,11 +464,9 @@ public final class GuardianManager {
             if (!player.getAbilities().instabuild) held.shrink(1);
             player.displayClientMessage(Component.literal("Страж лотоса признал тебя своим."), true);
 
-            GuardianTamedTrigger.INSTANCE.trigger(player);
             LotusPlayerState.addReputation(player, com.lotusblight.data.Faction.LOTUS, 3);
             int total = LotusPlayerState.incrementTamedGuardianCount(player);
             if (total == PACK_ADVANCEMENT_SIZE) {
-                GuardianPackTamedTrigger.INSTANCE.trigger(player);
             }
         }
     }

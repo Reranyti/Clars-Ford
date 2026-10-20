@@ -47,17 +47,9 @@ public final class NetworkHandler {
         // send e.g. ShowStarFallPacket to a LAN host and play the scene on the host's screen.
         int id = 0;
         CHANNEL.registerMessage(id++, MapSyncPacket.class, MapSyncPacket::encode, MapSyncPacket::decode, MapSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-        CHANNEL.registerMessage(id++, DialogueChoicePacket.class, DialogueChoicePacket::encode, DialogueChoicePacket::decode, DialogueChoicePacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(id++, PlayerStateSyncPacket.class, PlayerStateSyncPacket::encode, PlayerStateSyncPacket::decode, PlayerStateSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, ShowInnerVoicePacket.class, ShowInnerVoicePacket::encode, ShowInnerVoicePacket::decode, ShowInnerVoicePacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-        CHANNEL.registerMessage(id++, DialogueAnswerPacket.class, DialogueAnswerPacket::encode, DialogueAnswerPacket::decode, DialogueAnswerPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
-        CHANNEL.registerMessage(id++, DialogueOpenedPacket.class, DialogueOpenedPacket::encode, DialogueOpenedPacket::decode, DialogueOpenedPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(id++, GlandSyncPacket.class, GlandSyncPacket::encode, GlandSyncPacket::decode, GlandSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-        CHANNEL.registerMessage(id++, ShowWorldLotusLecturePacket.class, ShowWorldLotusLecturePacket::encode, ShowWorldLotusLecturePacket::decode, ShowWorldLotusLecturePacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-        CHANNEL.registerMessage(id++, TraitorBossThemePacket.class, TraitorBossThemePacket::encode, TraitorBossThemePacket::decode, TraitorBossThemePacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-        CHANNEL.registerMessage(id++, ChaseStatePacket.class, ChaseStatePacket::encode, ChaseStatePacket::decode, ChaseStatePacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-        CHANNEL.registerMessage(id++, ShowStarFallPacket.class, ShowStarFallPacket::encode, ShowStarFallPacket::decode, ShowStarFallPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
-        CHANNEL.registerMessage(id++, StarFallLineReachedPacket.class, StarFallLineReachedPacket::encode, StarFallLineReachedPacket::decode, StarFallLineReachedPacket::handle, Optional.of(NetworkDirection.PLAY_TO_SERVER));
         CHANNEL.registerMessage(id++, OpenCommandBookPacket.class, OpenCommandBookPacket::encode, OpenCommandBookPacket::decode, OpenCommandBookPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, MeteoriteMarkerSyncPacket.class, MeteoriteMarkerSyncPacket::encode, MeteoriteMarkerSyncPacket::decode, MeteoriteMarkerSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));
         CHANNEL.registerMessage(id++, ReputationSyncPacket.class, ReputationSyncPacket::encode, ReputationSyncPacket::decode, ReputationSyncPacket::handle, Optional.of(NetworkDirection.PLAY_TO_CLIENT));

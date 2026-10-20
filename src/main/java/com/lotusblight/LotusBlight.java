@@ -15,10 +15,6 @@ import com.lotusblight.spread.InfectionSpreadEngine;
 import com.lotusblight.spread.BarrierEvents;
 import com.lotusblight.spread.roots.RootGrowthEngine;
 import com.lotusblight.worldgen.GuaranteedSpawnManager;
-import com.lotusblight.advancement.SingleBiomeWorldTrigger;
-import com.lotusblight.advancement.TwoInfectionsTrigger;
-import com.lotusblight.advancement.SurvivorOfTheBloomTrigger;
-import com.lotusblight.advancement.TheHeartWaitsTrigger;
 import com.lotusblight.map.journeymap.JourneyMapSyncTicker;
 import net.minecraft.advancements.CriteriaTriggers;
 import net.minecraftforge.api.distmarker.Dist;
@@ -166,14 +162,8 @@ public class LotusBlight {
             MinecraftForge.EVENT_BUS.register(new BarrierEvents());
             MinecraftForge.EVENT_BUS.register(new RootGrowthEngine());
             MinecraftForge.EVENT_BUS.register(new com.lotusblight.spread.GuardianManager());
-            MinecraftForge.EVENT_BUS.register(com.lotusblight.boss.TraitorBossFight.class);
-            MinecraftForge.EVENT_BUS.register(com.lotusblight.boss.TraitorBossArena.class);
             MinecraftForge.EVENT_BUS.register(new GuaranteedSpawnManager());
             MinecraftForge.EVENT_BUS.register(new com.lotusblight.worldgen.EpicenterManager());
-            MinecraftForge.EVENT_BUS.register(new com.lotusblight.escape.LotusChaseEvent());
-            MinecraftForge.EVENT_BUS.register(com.lotusblight.escape.LotusChaseStructure.class);
-            MinecraftForge.EVENT_BUS.register(new com.lotusblight.escape.StarFallEvent());
-            MinecraftForge.EVENT_BUS.register(new com.lotusblight.escape.LabProto());
             MinecraftForge.EVENT_BUS.register(com.lotusblight.world.WorldMigrations.class);
             MinecraftForge.EVENT_BUS.register(new com.lotusblight.worldgen.WorldBorderSetup());
             MinecraftForge.EVENT_BUS.register(new com.lotusblight.worldgen.QuarantineBarrier());
@@ -181,16 +171,6 @@ public class LotusBlight {
         MinecraftForge.EVENT_BUS.register(com.lotusblight.command.LotusCommands.class);
         MinecraftForge.EVENT_BUS.register(com.lotusblight.world.ChromoDifficulty.class);
         com.lotusblight.map.NetworkHandler.register();
-        CriteriaTriggers.register(SingleBiomeWorldTrigger.INSTANCE);
-        CriteriaTriggers.register(TwoInfectionsTrigger.INSTANCE);
-        CriteriaTriggers.register(SurvivorOfTheBloomTrigger.INSTANCE);
-        CriteriaTriggers.register(TheHeartWaitsTrigger.INSTANCE);
-        CriteriaTriggers.register(com.lotusblight.advancement.GuardianTamedTrigger.INSTANCE);
-        CriteriaTriggers.register(com.lotusblight.advancement.GuardianPackTamedTrigger.INSTANCE);
-        CriteriaTriggers.register(com.lotusblight.advancement.LotusAlloyCraftedTrigger.INSTANCE);
-        CriteriaTriggers.register(com.lotusblight.advancement.AllianceGuardianSlaughterTrigger.INSTANCE);
-        CriteriaTriggers.register(com.lotusblight.advancement.WorldLotusLectureTrigger.INSTANCE);
-        CriteriaTriggers.register(com.lotusblight.advancement.TraitorBossDefeatedTrigger.INSTANCE);
         MinecraftForge.EVENT_BUS.register(new JourneyMapSyncTicker());
 
         // Config-screen button in the mods list — soft dependency, only touches YACL classes

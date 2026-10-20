@@ -54,9 +54,6 @@ public final class LotusCommands {
                 .then(Commands.literal("timewarp")
                         .then(Commands.argument("passes", IntegerArgumentType.integer(1, 500))
                                 .executes(ctx -> timewarp(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "passes")))))
-                .then(chaseCommands())
-                .then(labProtoCommands())
-                .then(starFallCommands())
                 .then(worldCommands())
                 .then(meteoriteCommands())
                 .then(blackHeartCommands())
@@ -79,30 +76,6 @@ public final class LotusCommands {
 
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> eventCommands() {
         return Commands.literal("event")
-                .then(Commands.literal("war").then(Commands.literal("skeleton")
-                        .executes(ctx -> reportEvent(ctx.getSource(), "Война / заготовка", com.lotusblight.event.WarEvents.skeleton(ctx.getSource().getPlayerOrException(), false)))
-                        .then(Commands.argument("player", EntityArgument.player())
-                                .executes(ctx -> reportEvent(ctx.getSource(), "Война / заготовка", com.lotusblight.event.WarEvents.skeleton(EntityArgument.getPlayer(ctx, "player"), false)))
-                                .then(Commands.literal("force")
-                                        .executes(ctx -> reportEvent(ctx.getSource(), "Война / заготовка", com.lotusblight.event.WarEvents.skeleton(EntityArgument.getPlayer(ctx, "player"), true)))))))
-                .then(Commands.literal("alliance").then(Commands.literal("skeleton")
-                        .executes(ctx -> reportEvent(ctx.getSource(), "Альянс / заготовка", com.lotusblight.event.AllianceEvents.skeleton(ctx.getSource().getPlayerOrException(), false)))
-                        .then(Commands.argument("player", EntityArgument.player())
-                                .executes(ctx -> reportEvent(ctx.getSource(), "Альянс / заготовка", com.lotusblight.event.AllianceEvents.skeleton(EntityArgument.getPlayer(ctx, "player"), false)))
-                                .then(Commands.literal("force")
-                                        .executes(ctx -> reportEvent(ctx.getSource(), "Альянс / заготовка", com.lotusblight.event.AllianceEvents.skeleton(EntityArgument.getPlayer(ctx, "player"), true)))))))
-                .then(Commands.literal("neutral").then(Commands.literal("leafiles")
-                        .executes(ctx -> reportEvent(ctx.getSource(), "Нейтральная / Лейфайлс", com.lotusblight.event.NeutralEvents.leafiles(ctx.getSource().getPlayerOrException(), false)))
-                        .then(Commands.argument("player", EntityArgument.player())
-                                .executes(ctx -> reportEvent(ctx.getSource(), "Нейтральная / Лейфайлс", com.lotusblight.event.NeutralEvents.leafiles(EntityArgument.getPlayer(ctx, "player"), false)))
-                                .then(Commands.literal("force")
-                                        .executes(ctx -> reportEvent(ctx.getSource(), "Нейтральная / Лейфайлс", com.lotusblight.event.NeutralEvents.leafiles(EntityArgument.getPlayer(ctx, "player"), true)))))))
-                .then(Commands.literal("guiding").then(Commands.literal("skeleton")
-                        .executes(ctx -> reportEvent(ctx.getSource(), "Путеводная / заготовка", com.lotusblight.event.GuidingEvents.skeleton(ctx.getSource().getPlayerOrException(), false)))
-                        .then(Commands.argument("player", EntityArgument.player())
-                                .executes(ctx -> reportEvent(ctx.getSource(), "Путеводная / заготовка", com.lotusblight.event.GuidingEvents.skeleton(EntityArgument.getPlayer(ctx, "player"), false)))
-                                .then(Commands.literal("force")
-                                        .executes(ctx -> reportEvent(ctx.getSource(), "Путеводная / заготовка", com.lotusblight.event.GuidingEvents.skeleton(EntityArgument.getPlayer(ctx, "player"), true)))))))
                 .then(Commands.literal("cursed").then(Commands.literal("skeleton")
                         .executes(ctx -> reportEvent(ctx.getSource(), "Проклятая / заготовка", com.lotusblight.event.CursedEvents.skeleton(ctx.getSource().getPlayerOrException(), false)))
                         .then(Commands.argument("player", EntityArgument.player())
@@ -387,102 +360,6 @@ public final class LotusCommands {
         return 1;
     }
 
-    // ---- /lotus chase ... ("Побег от лотоса" testing) -----------------------------------------
-
-    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> chaseCommands() {
-        return Commands.literal("chase")
-                .then(Commands.literal("unlock").executes(ctx -> chaseUnlock(ctx.getSource())))
-                .then(Commands.literal("status").executes(ctx -> chaseStatus(ctx.getSource())))
-                .then(Commands.literal("tp").executes(ctx -> chaseTeleport(ctx.getSource())));
-    }
-
-    private static int chaseUnlock(CommandSourceStack source) {
-        com.lotusblight.escape.LotusChaseEvent.get().forceUnlock(source.getServer().overworld());
-        source.sendSuccess(() -> Component.literal("Лаборатория побега разблокирована (обходит порог заражения)."), true);
-        return 1;
-    }
-
-    private static int chaseStatus(CommandSourceStack source) {
-        String report = com.lotusblight.escape.LotusChaseEvent.get().statusReport(source.getServer().overworld());
-        source.sendSuccess(() -> Component.literal(report), false);
-        return 1;
-    }
-
-    private static int chaseTeleport(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        BlockPos entrance = com.lotusblight.escape.LotusChaseEvent.get().labEntrance(source.getServer().overworld());
-        if (entrance == null) {
-            source.sendFailure(Component.literal("Чанк лаборатории ещё не загружен - попробуй снова, когда кто-нибудь окажется рядом."));
-            return 0;
-        }
-        source.getPlayerOrException().teleportTo(entrance.getX() - 6 + 0.5, entrance.getY() + 1, entrance.getZ() + 0.5);
-        source.sendSuccess(() -> Component.literal("Телепортирован ко входу в лабораторию: " + entrance.toShortString()), true);
-        return 1;
-    }
-
-    // ---- /lotus labproto ... (prototype of the redesigned escape lab, see escape/LabProto) -------
-
-    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> labProtoCommands() {
-        return Commands.literal("labproto")
-                .then(Commands.literal("build").executes(ctx -> labProto(ctx.getSource(), "build")))
-                .then(Commands.literal("bigbuild")
-                        .executes(ctx -> labProtoBig(ctx.getSource(), 20261010L))
-                        .then(Commands.argument("seed", com.mojang.brigadier.arguments.LongArgumentType.longArg())
-                                .executes(ctx -> labProtoBig(ctx.getSource(), com.mojang.brigadier.arguments.LongArgumentType.getLong(ctx, "seed")))))
-                .then(Commands.literal("map").executes(ctx -> labProto(ctx.getSource(), "map")))
-                .then(Commands.literal("start").executes(ctx -> labProto(ctx.getSource(), "start")))
-                .then(Commands.literal("stop").executes(ctx -> labProto(ctx.getSource(), "stop")))
-                .then(Commands.literal("status").executes(ctx -> labProto(ctx.getSource(), "status")));
-    }
-
-    private static int labProto(CommandSourceStack source, String action) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        com.lotusblight.escape.LabProto proto = com.lotusblight.escape.LabProto.get();
-        if (proto == null) {
-            source.sendFailure(Component.literal("Прототип не подключён (только на сервере мира)."));
-            return 0;
-        }
-        String result = switch (action) {
-            case "build" -> proto.build(source.getPlayerOrException());
-            case "start" -> proto.start(source.getPlayerOrException());
-            case "stop" -> proto.stop();
-            case "map" -> proto.map();
-            default -> proto.status();
-        };
-        source.sendSuccess(() -> Component.literal(result), false);
-        return 1;
-    }
-
-    private static int labProtoBig(CommandSourceStack source, long seed) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
-        com.lotusblight.escape.LabProto proto = com.lotusblight.escape.LabProto.get();
-        if (proto == null) {
-            source.sendFailure(Component.literal("Прототип не подключён (только на сервере мира)."));
-            return 0;
-        }
-        source.sendSuccess(() -> Component.literal("Строю большую лабораторию (несколько секунд, мир может ненадолго замереть)…"), false);
-        String result = proto.buildBig(source.getPlayerOrException(), seed);
-        source.sendSuccess(() -> Component.literal(result), false);
-        return 1;
-    }
-
-    // ---- /lotus starfall ... (testing - real trigger condition not decided yet) ---------------
-
-    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> starFallCommands() {
-        return Commands.literal("starfall")
-                .then(Commands.argument("player", EntityArgument.player())
-                        // Same mapping as StarFallEvent: a war-branch player gets Star Light's friendly
-                        // script (ShowStarFallPacket's allianceBranch=true), an alliance player the hostile one.
-                        .then(Commands.literal("war").executes(ctx -> starFallTrigger(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"), true)))
-                        .then(Commands.literal("alliance").executes(ctx -> starFallTrigger(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"), false))));
-    }
-
-    private static int starFallTrigger(CommandSourceStack source, ServerPlayer player, boolean allianceBranch) {
-        NetworkHandler.CHANNEL.send(PacketDistributor.PLAYER.with(() -> player), new com.lotusblight.map.ShowStarFallPacket(allianceBranch));
-        if (!allianceBranch) com.lotusblight.escape.StarFallEvent.beginWarScene(player);
-        // Real comets from Ex Meteor Shower, in the same spread-out waves the real trigger uses.
-        com.lotusblight.escape.StarFallEvent.startShower((net.minecraft.server.level.ServerLevel) player.level());
-        source.sendSuccess(() -> Component.literal("StarFall (" + (allianceBranch ? "война" : "альянс") + ") запущен для " + player.getGameProfile().getName()), true);
-        return 1;
-    }
-
     // ---- /lotus world ... (world-wide infection totals) --------------------------------------
 
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> worldCommands() {
@@ -510,11 +387,9 @@ public final class LotusCommands {
         long finalTotal = totalInfected;
         int reference = com.lotusblight.LotusConfig.WORLD_INFECTION_REFERENCE.get();
         float percent = reference == 0 ? 0f : (float) totalInfected / reference * 100f;
-        float chaseAt = com.lotusblight.escape.LotusChaseEvent.TRIGGER_FRACTION * 100f;
-        float starFallAt = com.lotusblight.escape.StarFallEvent.TRIGGER_FRACTION * 100f;
         source.sendSuccess(() -> Component.literal(String.format(
-                "Всего заражено: %d / %d (%.2f%%). Побег открывается на %.0f%%, StarFall на %.0f%%.",
-                finalTotal, reference, percent, chaseAt, starFallAt)), false);
+                "Всего заражено: %d / %d (%.2f%%).",
+                finalTotal, reference, percent)), false);
         return 1;
     }
 

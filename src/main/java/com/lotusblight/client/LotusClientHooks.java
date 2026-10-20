@@ -39,10 +39,6 @@ public final class LotusClientHooks {
         Minecraft.getInstance().setScreen(new ScientistPageScreen(variant));
     }
 
-    public static void openDialogue(BlockHitResult hit) {
-        Minecraft.getInstance().setScreen(new LotusDialogueScreen(nearestKnownPhase(hit.getBlockPos()), hit));
-    }
-
     /**
      * The dialogue screen used to always open at phase 0 regardless of the
      * outbreak's real state — the client never had any outbreak data to read.

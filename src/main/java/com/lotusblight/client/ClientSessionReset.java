@@ -25,11 +25,7 @@ public final class ClientSessionReset {
         ClientPlayerStateCache.clear();
         ClientGlandCache.clear();
         ClientReputationCache.clear();
-        StarFallOverlay.reset();
-        WorldLotusLectureOverlay.reset();
         InnerVoiceOverlay.reset();
-        LotusChaseOverlay.stopAll();
-        TraitorBossMusicOverlay.stop();
         NormalBranchFreeze.reset();
         NormalBranchClient.setSilenced(false);
     }

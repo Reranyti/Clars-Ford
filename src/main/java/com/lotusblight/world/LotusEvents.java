@@ -343,9 +343,7 @@ public class LotusEvents {
                 boolean quiet = DistExecutor.unsafeRunForDist(
                         () -> () -> com.lotusblight.client.NormalBranchClient.isSilenced(),
                         () -> () -> false);
-                if (!quiet) {
-                    DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> com.lotusblight.client.LotusClientHooks.openDialogue(event.getHitVec()));
-                }
+                // the old conversation with the Lotus is gone: the lotus no longer answers
                 event.setCanceled(true);
             }
             return;
@@ -560,7 +558,6 @@ public class LotusEvents {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         if (!event.getSmelting().is(ModItems.LOTUS_ALLOY.get())) return;
         if (LotusPlayerState.getDialogueBranch(player) != LotusPlayerState.BRANCH_RESISTANCE) return;
-        com.lotusblight.advancement.LotusAlloyCraftedTrigger.INSTANCE.trigger(player);
     }
 
     private void decrementInfectedCount(ServerLevel level, BlockPos pos, int amount) {
