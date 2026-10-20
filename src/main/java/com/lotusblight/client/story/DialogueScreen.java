@@ -70,6 +70,10 @@ public final class DialogueScreen extends Screen {
     private void advance() {
         DialogueScript.Line l = line();
         if (l.intro() != null) {
+            if (!flagSent) {
+                flagSent = true;
+                sendFlag("met_" + l.intro());
+            }
             go(script.after(index, null));
             return;
         }

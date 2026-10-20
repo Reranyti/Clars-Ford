@@ -46,7 +46,7 @@ public final class CharacterFaces {
     }
 
     public static synchronized void clear() {
-        for (CharacterFaces f : CACHE.values()) f.texture.close();
+        for (CharacterFaces f : CACHE.values()) Minecraft.getInstance().getTextureManager().release(f.location);
         CACHE.clear();
     }
 
