@@ -10,6 +10,10 @@ import net.minecraftforge.registries.RegistryObject;
 public final class ModSounds {
     public static final DeferredRegister<SoundEvent> SOUNDS = DeferredRegister.create(ForgeRegistries.SOUND_EVENTS, LotusBlight.MODID);
 
+    /** The music of the main menu ("Your New Prison [REMIX] [NULLSCAPE]", FaneraK): looped under the puppet menu. */
+    public static final RegistryObject<SoundEvent> MENU_MAIN = SOUNDS.register("menu_main",
+            () -> SoundEvent.createVariableRangeEvent(new ResourceLocation(LotusBlight.MODID, "menu_main")));
+
     /** The music of the episode selection ("Cat Jams (1989)", Spy Trolling): looped while the episode screen is open. */
     public static final RegistryObject<SoundEvent> MENU_EPISODES = SOUNDS.register("menu_episodes",
             () -> SoundEvent.createVariableRangeEvent(new ResourceLocation(LotusBlight.MODID, "menu_episodes")));

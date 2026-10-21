@@ -103,5 +103,14 @@
         "stream": true
       }
     ]
+  },
+  "menu_main": {
+    "category": "music",
+    "sounds": [
+      {
+        "name": "lotusblight:menu_main",
+        "stream": true
+      }
+    ]
   }
 }

@@ -75,7 +75,7 @@ public final class MenuMusic {
     public static void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || current == null) return;
         var screen = Minecraft.getInstance().screen;
-        boolean menu = screen instanceof EpisodesScreen || screen instanceof SaveSlotsScreen;
+        boolean menu = screen instanceof EpisodeMenuScreen || screen instanceof EpisodesScreen || screen instanceof SaveSlotsScreen;
         if (!menu) {
             current.fadeOut();
             if (current.isStopped()) {

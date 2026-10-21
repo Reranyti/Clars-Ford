@@ -60,6 +60,7 @@ public final class EpisodeMenuScreen extends Screen {
 
     @Override
     protected void init() {
+        MenuMusic.play(com.lotusblight.registry.ModSounds.MENU_MAIN.get());
         hangings.clear();
         frags.clear();
         java.util.Arrays.fill(threadOn, 1f);
