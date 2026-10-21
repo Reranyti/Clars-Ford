@@ -38,6 +38,11 @@ public final class MenuMusic {
             this.volume = 0.0f;
         }
 
+        @Override
+        public boolean canStartSilent() {
+            return true;                                   // it starts at volume 0 and fades in: the sound engine would skip a silent start
+        }
+
         void fadeOut() {
             fading = true;
         }
@@ -56,6 +61,7 @@ public final class MenuMusic {
         stopNow();
         current = new Track(event);
         currentEvent = event;
+        LotusBlight.LOGGER.info("Menu music: {}", event.getLocation());
         Minecraft.getInstance().getSoundManager().play(current);
     }
 
