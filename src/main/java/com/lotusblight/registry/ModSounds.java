@@ -10,6 +10,14 @@ import net.minecraftforge.registries.RegistryObject;
 public final class ModSounds {
     public static final DeferredRegister<SoundEvent> SOUNDS = DeferredRegister.create(ForgeRegistries.SOUND_EVENTS, LotusBlight.MODID);
 
+    /** The music of the episode selection ("Cat Jams (1989)", Spy Trolling): looped while the episode screen is open. */
+    public static final RegistryObject<SoundEvent> MENU_EPISODES = SOUNDS.register("menu_episodes",
+            () -> SoundEvent.createVariableRangeEvent(new ResourceLocation(LotusBlight.MODID, "menu_episodes")));
+
+    /** The music of the save-slot screen ("FAKE NEWS", Infynitto): looped while the slot screen is open. */
+    public static final RegistryObject<SoundEvent> MENU_SLOTS = SOUNDS.register("menu_slots",
+            () -> SoundEvent.createVariableRangeEvent(new ResourceLocation(LotusBlight.MODID, "menu_slots")));
+
     public static final RegistryObject<SoundEvent> INNER_VOICE_THEME = SOUNDS.register("inner_voice_theme",
             () -> SoundEvent.createVariableRangeEvent(new ResourceLocation(LotusBlight.MODID, "inner_voice_theme")));
 

@@ -74,6 +74,7 @@ public final class SaveSlotsScreen extends Screen {
 
     @Override
     protected void init() {
+        MenuMusic.play(com.lotusblight.registry.ModSounds.MENU_SLOTS.get());
         refresh();
     }
 

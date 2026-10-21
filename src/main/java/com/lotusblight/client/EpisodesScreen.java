@@ -76,6 +76,7 @@ public final class EpisodesScreen extends Screen {
 
     @Override
     protected void init() {
+        MenuMusic.play(com.lotusblight.registry.ModSounds.MENU_EPISODES.get());
         cards.clear();
         leaving = -1;               // coming back from an episode's menu: the cards are not "flying away" any more (it opened that menu again at once)
         enterAt = Util.getMillis();

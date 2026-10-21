@@ -85,5 +85,23 @@
         "stream": true
       }
     ]
+  },
+  "menu_episodes": {
+    "category": "music",
+    "sounds": [
+      {
+        "name": "lotusblight:menu_episodes",
+        "stream": true
+      }
+    ]
+  },
+  "menu_slots": {
+    "category": "music",
+    "sounds": [
+      {
+        "name": "lotusblight:menu_slots",
+        "stream": true
+      }
+    ]
   }
 }
