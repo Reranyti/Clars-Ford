@@ -204,6 +204,7 @@ public final class EpisodesScreen extends Screen {
 
     @Override
     public boolean keyPressed(int key, int scan, int mods) {
+        key = MenuKeys.arrow(key);
         if (key == 262) {
             turn(1);
             return true;

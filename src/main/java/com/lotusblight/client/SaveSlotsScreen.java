@@ -616,6 +616,7 @@ public final class SaveSlotsScreen extends Screen {
 
     @Override
     public boolean keyPressed(int key, int scan, int mods) {
+        key = MenuKeys.arrow(key);
         if (pending != null) return true;
         if (confirmSlot >= 0) {
             switch (key) {

@@ -145,6 +145,11 @@ public final class EpisodeMenuScreen extends Screen {
     }
 
     @Override
+    public boolean keyPressed(int key, int scan, int mods) {
+        return super.keyPressed(MenuKeys.arrow(key), scan, mods);
+    }
+
+    @Override
     public boolean shouldCloseOnEsc() {
         return false;
     }
